@@ -18,3 +18,27 @@ Because the computation programs are written in Python, there is no way to easil
 
 Lots of setup steps here, please follow them carefully.
 
+
+
+
+## File Format
+
+The file I have called `Clock.txt` is the working file, where the Clock In and Clock Out shortcuts add information. The format is very simple but has some quirks.
+
+**VERY IMPORTANT QUIRK** is that this file does not contain a final newline at the end, this is to make the shortcuts work properly. I have an idea to fix this, but it isn't an huge issue at the moment.
+
+Line one starts with "==". This must be primed before the shortcuts are used.
+
+If the last line of the file is "==", you are clocked out. Each clock session will fall between these lines.
+
+A clock session looks like this
+```txt
+[Job]
+>yyyy-mm-ddThh:mm:ss-hh:mm
+<yyyy-mm-ddThh:mm:ss-hh:mm
+[short description]
+==
+```
+The times are ISO 8601 format which Shortcuts natively outputs and includes time zone information.
+
+I'm not sure if the short description can be multiple lines at this moment, but it can be possible. Job, in time, and out time should always be one line.
