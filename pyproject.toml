@@ -1,0 +1,8 @@
+[project]
+name = "timecard"
+version = "0.1.0"
+description = "Timecard utility"
+requires-python = ">=3.13"
+
+[project.scripts]
+timecard = "main:main"
