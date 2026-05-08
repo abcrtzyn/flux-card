@@ -18,8 +18,29 @@ Because the computation programs are written in Python, there is no way to easil
 
 Lots of setup steps here, please follow them carefully.
 
-
-
+1. Create the Clock file in the location of your choice, it must be accessible by all devices you want to clock in and out with.
+2. Start the file off by putting == in the top line and make sure there is no newline after it (plenty of code editors will add a newline automatically, make sure this doesn't happen)
+3. On the devices which you are going to use them, import the shortcuts Clock In and Clock Out. See the README in the shortcuts folder for more information
+    - Do this by opening them as files, not dragging them into the shortcuts app
+    - Answer the import questions:
+        - (Clock in) What jobs are you using this for (for tagging purposes)
+        - Where is the Clock file located
+        - (Clock out) Do you want to add descriptions
+4. Setup the python environment (optional)
+    - the environment allows the use of `timecard` as a shell command as a replacement for `python3 src/main.py` and that is about it.
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+5. Tell the script where your Clock file is located
+    - right now this is hard-coded at the top of the main.py file, to be changed soon
+6. Run the program using one of the following
+```sh
+timecard # if you have setup the python environment
+python3 src/main.py
+src/main.py
+```
 
 ## File Format
 
@@ -41,4 +62,4 @@ A clock session looks like this
 ```
 The times are ISO 8601 format which Shortcuts natively outputs and includes time zone information.
 
-I'm not sure if the short description can be multiple lines at this moment, but it can be possible. Job, in time, and out time should always be one line.
+Short description can be multiple lines; job, in time, and out time should always be one line.

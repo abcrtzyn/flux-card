@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from collections import defaultdict
 from datetime import datetime, time, timedelta, date
 from typing import List, Dict
@@ -24,7 +26,7 @@ def format_timedelta(x: timedelta):
 
 def main():
     args = sys.argv
-
+    print(args)
     if len(args) == 2:
         # mode
         # -1, all data
