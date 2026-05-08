@@ -63,3 +63,8 @@ A clock session looks like this
 The times are ISO 8601 format which Shortcuts natively outputs and includes time zone information.
 
 Short description can be multiple lines; job, in time, and out time should always be one line.
+
+
+## Contributing
+
+I'm very happy to take pull requests on this repo. If you have an output format you would like to have or any other features, feel free to submit issues or pull requests.
