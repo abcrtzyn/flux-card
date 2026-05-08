@@ -1,8 +1,9 @@
 [project]
-name = "timecard"
+name = "flux-card"
 version = "0.1.0"
-description = "Timecard utility"
+description = "Timecard utility using Apple shortcuts and python to track hours on very flexible schedules"
 requires-python = ">=3.13"
 
 [project.scripts]
-timecard = "main:main"
+fc = "main:main"
+fluxcard = "main:main"

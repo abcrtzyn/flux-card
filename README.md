@@ -1,4 +1,4 @@
-# Timecard
+# Flux Card
 
 This repo is an inter-device time card program. Designed to record clock in and clock out times using Apple shortcuts and then a program to output all of the time periods.
 
@@ -8,7 +8,7 @@ When working a student job that has very flexible hours, I needed a quick easy w
 
 ## Requirements
 
-These programs were designed to work on iPhone and a Mac. There are 3 Apple shortcuts: Clock in and Clock out (can run on either), and Calculate Time which directily calls Python to do the heavy lifting (can only be run on Mac). In order for both devices to have accurate inforamation, they must share a file on iCloud drive.
+These programs were designed to work on iPhone and a Mac. There are 2 Apple shortcuts: Clock in and Clock out (can run on either). In order for both devices to have accurate inforamation, they must share a file on iCloud drive.
 
 It should be possible to not require a Mac as long as you choose not to use the Calculate Time shortcut and have the shared file on some platform (your comupter could have access to iCloud or your iPhone could have access to some other cloud file storage).
 
@@ -27,7 +27,7 @@ Lots of setup steps here, please follow them carefully.
         - Where is the Clock file located
         - (Clock out) Do you want to add descriptions
 4. Setup the python environment (optional)
-    - the environment allows the use of `timecard` as a shell command as a replacement for `python3 src/main.py` and that is about it.
+    - the environment allows the use of `fluxcard` or `fc` as a shell command as a replacement for `python3 src/main.py` and that is about it.
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
@@ -37,7 +37,8 @@ pip install -e .
     - right now this is hard-coded at the top of the main.py file, to be changed soon
 6. Run the program using one of the following
 ```sh
-timecard # if you have setup the python environment
+fluxcard # if you have setup the python environment
+fc # if you have setup the python environment
 python3 src/main.py
 src/main.py
 ```
