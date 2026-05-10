@@ -37,8 +37,8 @@ pip install -e .
     - right now this is hard-coded at the top of the main.py file, to be changed soon
 6. Run the program using one of the following
 ```sh
-fluxcard # if you have setup the python environment
-fc # if you have setup the python environment
+fluxcard # if you have set up the python environment
+flux # if you have set up the python environment
 python3 src/main.py
 src/main.py
 ```

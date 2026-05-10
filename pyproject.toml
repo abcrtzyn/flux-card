@@ -5,5 +5,5 @@ description = "Timecard utility using Apple shortcuts and python to track hours 
 requires-python = ">=3.13"
 
 [project.scripts]
-fc = "main:main"
+flux = "main:main"
 fluxcard = "main:main"
