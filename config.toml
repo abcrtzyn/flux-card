@@ -1,0 +1,2 @@
+timecard_file = "Clock.txt"
+output_timezone = "US/Central"

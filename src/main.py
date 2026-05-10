@@ -2,18 +2,25 @@
 
 from collections import defaultdict
 from datetime import datetime, time, timedelta, date
-from typing import List, Dict
+import os
+from pathlib import Path
+import tomllib
+from typing import Any, List, Dict
 import sys
 from zoneinfo import ZoneInfo
 
 from segments import Segment
 
-OUT = False; # false to print timecard, true to print summary
-TIMECARD_FILE = 'Clock.txt'
-OUTPUT_TIMEZONE = ZoneInfo('US/Central')
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
-
+def load_config() -> Dict[str,Any]:
+    config_input_path = REPO_ROOT / "config.toml"
+    if not config_input_path.exists():
+        return {}
+    
+    with open(config_input_path, "rb") as f:
+        return tomllib.load(f)
 
 def format_timedelta(x: timedelta):
     "Quick function for formatting a timedelta"
@@ -25,26 +32,70 @@ def format_timedelta(x: timedelta):
 
 
 def main():
+    config = load_config()
+
     args = sys.argv
-    print(args)
-    if len(args) == 2:
-        # mode
-        # -1, all data
-        # a date, from that date, 2
-        try:
-            startDate = datetime.fromisoformat(args[1]).date()
-            endDate = (datetime.now(OUTPUT_TIMEZONE) + timedelta(1)).date()
 
-            mode = 2
-        except ValueError:
-            mode = int(args[1])
-        
+    if len(args) > 2:
+        print('too many arguments given')
+        exit(1)
+    elif len(args) == 2:
+        input_path = Path(args[1]).resolve()
+    else: # len(args) == 1
+        if "timecard_file" not in config:
+            print('"timecard_file" must be specified in config or given as a command line argument')
+            exit(1)
+        p = Path(config["timecard_file"]).expanduser()
+        if p.is_absolute():
+            input_path = p
+        else:
+            input_path = (REPO_ROOT / p).resolve()
+
+    if not input_path.exists():
+        print(f"file not found: {input_path}")
+        exit(1)
+    if not input_path.is_file():
+        print(f"timecard file is not a file: {input_path}")
+        exit(1)
+    if not os.access(input_path, os.R_OK):
+        print(f"Do not have permission to read file: {input_path}")
+        exit(1)
+
+    if "output_timezone" in config:
+        output_timezone = ZoneInfo(config["output_timezone"])
     else:
-        # default is all
-        mode = -1;
-        
+        output_timezone = datetime.now().astimezone().tzinfo
+        if output_timezone is None:
+            print('no output timezone specified, tried to use system timezone but found none')
+            print('please specify a timezone in the config file')
+            exit(1)
+        print(f'warning, no output timezone specified, using {output_timezone}')
 
-    with open(TIMECARD_FILE) as clock:
+    print('using the following settings')
+    print('input file: ', input_path)
+    print('output timezone: ', output_timezone)
+
+    mode = -1 # hard code all data for now until I get date filtering input implemented
+
+    # args = sys.argv
+    # print(args)
+    # if len(args) == 2:
+    #     # mode
+    #     # -1, all data
+    #     # a date, from that date, 2
+    #     try:
+    #         startDate = datetime.fromisoformat(args[1]).date()
+    #         endDate = (datetime.now(output_timezone) + timedelta(1)).date()
+
+    #         mode = 2
+    #     except ValueError:
+    #         mode = int(args[1])
+        
+    # else:
+    #     # default is all
+    #     mode = -1;
+        
+    with open(input_path) as clock:
         txt = clock.read();
 
     txtSegments = [seg.strip() for seg in txt.split("==")];
@@ -77,8 +128,8 @@ def main():
         job = lines[0]
         description = ';;'.join(lines[3:])
         # extract time values
-        localInTime = datetime.fromisoformat(lines[1][1:]).astimezone(OUTPUT_TIMEZONE)
-        localOutTime = datetime.fromisoformat(lines[2][1:]).astimezone(OUTPUT_TIMEZONE)
+        localInTime = datetime.fromisoformat(lines[1][1:]).astimezone(output_timezone)
+        localOutTime = datetime.fromisoformat(lines[2][1:]).astimezone(output_timezone)
 
         current_start = localInTime
         
@@ -92,7 +143,7 @@ def main():
             
             # Set the start of the next segment to 00:00:00 of the following day
             next_day = local_current.date() + timedelta(days=1)
-            current_start = datetime.combine(next_day, time.min, tzinfo=OUTPUT_TIMEZONE)
+            current_start = datetime.combine(next_day, time.min, tzinfo=output_timezone)
 
         segments.append(Segment(job, current_start, localOutTime, description))
 
@@ -120,10 +171,10 @@ def main():
             summary.write(f'{job:13s}  {format_timedelta(total_hours):>10s}\n')
             card.write(f'{job}\n')
             card.write(f'\tIn\tOut\tHours\n')
-            if OUT:
-                print(f'{job:13s}  {format_timedelta(total_hours):>10s}')
-            else:
-                print(f'{job}')
+            # if OUT:
+            #     print(f'{job:13s}  {format_timedelta(total_hours):>10s}')
+            # else:
+            #     print(f'{job}')
             # now list out each date and its segments
             for dat in sorted(date_groups.keys()):
                 segs = date_groups[dat]
@@ -133,23 +184,23 @@ def main():
                 # card.write(f"{dat.strftime('%a, %b %d %Y'):16s}  {day_total.total_seconds()/3600:.2f}\n");
                 card.write(f"{dat.strftime('%a, %b %d %Y'):16s}\n");
 
-                if OUT: 
-                    print(f"{dat.strftime('%a, %b %d %Y'):16s}  {str(day_total):>8s}")
-                else:
-                    print(f"{dat.strftime('%a, %b %d %Y'):16s}  {day_total.total_seconds()/3600:.2f}")
+                # if OUT: 
+                #     print(f"{dat.strftime('%a, %b %d %Y'):16s}  {str(day_total):>8s}")
+                # else:
+                #     print(f"{dat.strftime('%a, %b %d %Y'):16s}  {day_total.total_seconds()/3600:.2f}")
                 
                 for seg in segs:
                     summary.write(f"{seg.inTime.strftime('%-I:%M:%S%p%z'):>16s}    {str(seg.elapsed()):>8s}   {seg.description}\n")
-                    # card.write(f"{seg.inTime.astimezone(pytz.timezone(OUTPUT_TIMEZONE)).strftime('%-I %M %p')}     {seg.outTime.astimezone(pytz.timezone(OUTPUT_TIMEZONE)).strftime('%-I %M %p')}\n")
+                    # card.write(f"{seg.inTime.astimezone(pytz.timezone(output_timezone)).strftime('%-I %M %p')}     {seg.outTime.astimezone(pytz.timezone(output_timezone)).strftime('%-I %M %p')}\n")
                     card.write(f"\t{seg.inTime.strftime('%-I:%M %p')}\t{seg.outTime.strftime('%-I:%M %p')}\t{str(seg.elapsed())}\n")
-                    if OUT:
-                        print(f"{seg.inTime.strftime('%-I:%M:%S%p%z'):>16s}   {str(seg.elapsed()):>8s}   {seg.description}")
-                    else:
-                        print(f"{seg.inTime.strftime('%-I %M %p')}     {seg.outTime.strftime('%-I %M %p')}")
+                    # if OUT:
+                    #     print(f"{seg.inTime.strftime('%-I:%M:%S%p%z'):>16s}   {str(seg.elapsed()):>8s}   {seg.description}")
+                    # else:
+                    #     print(f"{seg.inTime.strftime('%-I %M %p')}     {seg.outTime.strftime('%-I %M %p')}")
             
             card.write(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
             card.write(f"Total\t\t\t{format_timedelta(total_hours)}\n\n\n")
-            print();
+            # print();
 
 if __name__ == "__main__":
     main()
