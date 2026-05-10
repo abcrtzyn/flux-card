@@ -1,2 +1,2 @@
-timecard_file = "Clock.txt"
+timecard_path = "Clock.txt"
 output_timezone = "US/Central"

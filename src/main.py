@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
+import argparse
 from collections import defaultdict
 from datetime import datetime, time, timedelta, date
 import os
 from pathlib import Path
 import tomllib
 from typing import Any, List, Dict
-import sys
 from zoneinfo import ZoneInfo
 
 from segments import Segment
@@ -22,6 +22,12 @@ def load_config() -> Dict[str,Any]:
     with open(config_input_path, "rb") as f:
         return tomllib.load(f)
 
+def parse_cli_start_date(date_str: str|None):
+    if date_str is None or date_str in ("_", ""):
+        return None
+    return date.fromisoformat(date_str)
+    
+
 def format_timedelta(x: timedelta):
     "Quick function for formatting a timedelta"
     s = int(x.total_seconds())
@@ -34,18 +40,24 @@ def format_timedelta(x: timedelta):
 def main():
     config = load_config()
 
-    args = sys.argv
+    parser = argparse.ArgumentParser(prog="fluxcard")
 
-    if len(args) > 2:
-        print('too many arguments given')
-        exit(1)
-    elif len(args) == 2:
-        input_path = Path(args[1]).resolve()
-    else: # len(args) == 1
-        if "timecard_file" not in config:
-            print('"timecard_file" must be specified in config or given as a command line argument')
+    parser.add_argument("-i", "--input", dest="timecard_path", help="Path to input file")
+    parser.add_argument("-tz", "--timezone", dest="output_timezone", type=ZoneInfo, help="timezone to format output")
+
+    parser.add_argument("start_date", nargs="?", type=parse_cli_start_date, help="Optinal start date, can use _ as a placeholder (YYYY-MM-DD)")
+    parser.add_argument("end_date", nargs="?", type=date.fromisoformat, help="Optinal end date, not including the day itself (YYYY-MM-DD)")
+
+    args = parser.parse_args()    
+
+    if hasattr(args,'timecard_path'):
+        input_path = Path(args.timecard_path).resolve()
+    else:
+        # grab config timecard file
+        if "timecard_path" not in config:
+            print('"timecard_path" must be specified in config or given as a command line argument')
             exit(1)
-        p = Path(config["timecard_file"]).expanduser()
+        p = Path(config["timecard_path"]).expanduser()
         if p.is_absolute():
             input_path = p
         else:
@@ -61,39 +73,32 @@ def main():
         print(f"Do not have permission to read file: {input_path}")
         exit(1)
 
-    if "output_timezone" in config:
+    if hasattr(args,"output_timezone"):
+        output_timezone = args.output_timezone
+    elif "output_timezone" in config:
         output_timezone = ZoneInfo(config["output_timezone"])
     else:
         output_timezone = datetime.now().astimezone().tzinfo
         if output_timezone is None:
-            print('no output timezone specified, tried to use system timezone but found none')
-            print('please specify a timezone in the config file')
+            print('no output timezone specified in cli or config, tried to use system timezone but found none')
+            print('please specify a timezone in the cli or config file')
             exit(1)
-        print(f'warning, no output timezone specified, using {output_timezone}')
+        print(f'warning, no output timezone specified in cli or config, using {output_timezone}')
+
+    start_date = args.start_date
+    end_date = args.end_date
+
+    if start_date >= end_date:
+        print('start date is after or the same as end date, no results would show')
+        exit(1)
+
 
     print('using the following settings')
-    print('input file: ', input_path)
-    print('output timezone: ', output_timezone)
+    print('input file:', input_path)
+    print('output timezone:', output_timezone)
+    print('start date:', start_date)
+    print('end date:', end_date)
 
-    mode = -1 # hard code all data for now until I get date filtering input implemented
-
-    # args = sys.argv
-    # print(args)
-    # if len(args) == 2:
-    #     # mode
-    #     # -1, all data
-    #     # a date, from that date, 2
-    #     try:
-    #         startDate = datetime.fromisoformat(args[1]).date()
-    #         endDate = (datetime.now(output_timezone) + timedelta(1)).date()
-
-    #         mode = 2
-    #     except ValueError:
-    #         mode = int(args[1])
-        
-    # else:
-    #     # default is all
-    #     mode = -1;
         
     with open(input_path) as clock:
         txt = clock.read();
@@ -154,7 +159,8 @@ def main():
     
     for seg in segments:
         dat = seg.inTime.date();
-        if mode == -1 or startDate <= dat < endDate:
+        if (start_date is None or start_date <= dat) and (end_date is None or dat < end_date):
+            # if the date is within the filter range
             grouped_segs[seg.job][dat].append(seg);
 
 

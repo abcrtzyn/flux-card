@@ -33,7 +33,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
 ```
-5. Open config.toml and set your default parameters here, such as the location of the Clock file with respect to the repo root and output timezone. See [config file options](#config-options)
+5. Open config.toml and set your default parameters here, such as the location of the Clock file with respect to the repo root and output timezone. See [config file options](#options)
 6. Run the program using one of the following
 ```sh
 fluxcard # if you have set up the python environment
@@ -42,14 +42,38 @@ python3 src/main.py
 src/main.py
 ```
 
-## Config Options
+## Options
 
-All config options can be set on the command line (not yet, but eventually). If they are not specified on the command line, `config.toml` is checked for other options. The config file is meant to be a user profile, a set of options you use most frequently so the options don't have to be set every time.
+This section goes through details of all parameters that can be set on the command line or in the `config.toml` file. All options set by the command line will override the config file options. Use `fluxcard -h` for information in the command line.
 
-This is the list of options supported in `config.toml` and what occurs if the option is not specified either in this file or on the command line.
+| Option | CLI Flag | Config Key | Default / Fallback |
+| :--- | :--- | :--- | :--- |
+| **Input File** | `-i [path]` | `input_file` | *Error (Required)* |
+| **Timezone** | `-tz [zone]` | `output_timezone` | System Local |
+| **Start Date** | `[param 1]` | *N/A* | *No minimum filter* |
+| **End Date** | `[param 2]` | *N/A* | *No maximum filter* |
 
-- `timecard_file`: location of the clock file as an absolute path or relative to the repo root. Progarm will error if no valid file is specified.
-- `output_timezone`: timezone to convert all clock times to. Accepts standard IANA identifiers (like `America/Chicago`), but any value accepted by Python `ZoneInfo` is allowed. The program will use your system's local timezone if none is specified.
+
+#### Timecard File
+
+The Clock file to input data from. This parameter is required.
+
+- **CLI**: `-i [path]` or `--input [path]`; absolute path or path relative to cwd.
+- **Config**: `timecard_path`; absolute path or path relative to repo root
+
+#### Output Timezone
+
+Timezone to convert all clock times to. Accepts standard IANA identifiers (like `America/Chicago`), but any value accepted by Python `ZoneInfo` is allowed. The program will attempt to use your system timezone if none is specified. Specifying a timezone will help handle daylight savings time.
+
+- **CLI**: `-tz [zone]` or `--timezone [zone]`
+- **Config**: `output_timezone`
+
+#### Date Range
+
+Only available on the CLI, filters the clocked in segments within the range specified. Use the format `YYYY-MM-DD`. The filter range includes `start_date` and does not include `end_date`, for the set theory people, **[...)**. Example: if you want to include periods from today, use tomorrow's date. Leaving `end_date` blank means no maximum. Leaving `start_date` blank means no minimum, you can use `_` if you want to set an end date and not a start date (such as `fluxcard _ 2026-01-01`). Leaving both out will use the whole file.
+
+- **CLI**: positional args, thus `fluxcard [start_date] [end_date]`
+
 
 ## Program documentation
 
