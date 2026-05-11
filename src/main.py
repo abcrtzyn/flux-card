@@ -91,7 +91,7 @@ def main():
     start_date = args.start_date
     end_date = args.end_date
 
-    if start_date >= end_date:
+    if start_date is not None and end_date is not None and start_date >= end_date:
         print('start date is after or the same as end date, no results would show')
         exit(1)
 
