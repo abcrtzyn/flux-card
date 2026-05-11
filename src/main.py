@@ -154,8 +154,6 @@ def main():
     print('start date:', start_date)
     print('end date:', end_date)
 
-    exit()
-
     with open(input_path) as clock:
         txt = clock.read();
 
