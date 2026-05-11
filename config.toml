@@ -1,2 +1,6 @@
 timecard_path = "Clock.txt"
 output_timezone = "US/Central"
+
+[period]
+anchor = 2026-05-10
+length = 14

@@ -52,6 +52,9 @@ This section goes through details of all parameters that can be set on the comma
 | **Timezone** | `-tz [zone]` | `output_timezone` | System Local |
 | **Start Date** | `[param 1]` | *N/A* | *No minimum filter* |
 | **End Date** | `[param 2]` | *N/A* | *No maximum filter* |
+| **Period Mode** | `-p [index]` | *N/A* | *Disabled* |
+| **Period Anchor**| `--period-settings [anchor] [length]` | `[period] anchor` | *Error (Required)* |
+| **Period Length**| `--period-settings [anchor] [length]` | `[period] length` | *Error (Required)* |
 
 
 #### Timecard File
@@ -73,6 +76,27 @@ Timezone to convert all clock times to. Accepts standard IANA identifiers (like 
 Only available on the CLI, filters the clocked in segments within the range specified. Use the format `YYYY-MM-DD`. The filter range includes `start_date` and does not include `end_date`, for the set theory people, **[...)**. Example: if you want to include periods from today, use tomorrow's date. Leaving `end_date` blank means no maximum. Leaving `start_date` blank means no minimum, you can use `_` if you want to set an end date and not a start date (such as `fluxcard _ 2026-01-01`). Leaving both out will use the whole file.
 
 - **CLI**: positional args, thus `fluxcard [start_date] [end_date]`
+
+#### Period Mode
+
+Filters based on a period pay schedule, with the options period anchor and period length set, you can enter a period offset relative to today and it will filter in that range. The period offset works as follows. Use 0 for the *current* period (the pay period that today is a part of), use 1 for the *previous* pay period, or any other integer for whatever you are looking for. This mode will use the anchor and period to figue out when the period starts and ends and filter based on those dates.
+
+- **CLI**: `-p [index]` or `--period [index]`
+
+
+#### Period Anchor
+
+The anchor point for period mode, the first day in of a pay period. Can be set to any date past or future.
+
+- **CLI**: `--period-settings [anchor] [length]`
+- **Config**: `[period] anchor`
+
+#### Period Length
+
+The length of a pay period measured in days. Used in period mode.
+
+- **CLI**: `--period-settings [anchor] [length]`
+- **Config**: `[period] anchor`
 
 
 ## Program documentation

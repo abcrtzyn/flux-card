@@ -3,12 +3,14 @@
 import argparse
 from collections import defaultdict
 from datetime import datetime, time, timedelta, date
+from math import floor
 import os
 from pathlib import Path
 import tomllib
-from typing import Any, List, Dict
+from typing import Any, List, Dict, Tuple, cast
 from zoneinfo import ZoneInfo
 
+from period_settings_parser import PeriodSettingsAction
 from segments import Segment
 
 
@@ -51,9 +53,13 @@ def main():
     parser.add_argument("start_date", nargs="?", type=parse_cli_start_date, help="Optinal start date, can use _ as a placeholder (YYYY-MM-DD)")
     parser.add_argument("end_date", nargs="?", type=date.fromisoformat, help="Optinal end date, not including the day itself (YYYY-MM-DD)")
 
-    args = parser.parse_args()    
+    parser.add_argument("-p", "--period", type=int, help="Period index (0=current, 1=previous, etc.), replaces date filtering mode")
+    parser.add_argument("--period-settings",nargs=2,action=PeriodSettingsAction, metavar=("ANCHOR_DATE","LENGTH"), help="anchor point date (YYYY-MM-DD) and period length in days used in period mode")
 
-    if hasattr(args,'timecard_path'):
+    args = parser.parse_args()
+
+    ### INPUT PATH
+    if args.timecard_path is not None:
         input_path = Path(args.timecard_path).resolve()
     else:
         # grab config timecard file
@@ -76,7 +82,8 @@ def main():
         print(f"Do not have permission to read file: {input_path}")
         exit(1)
 
-    if hasattr(args,"output_timezone"):
+    ### OUTPUT TIMEZONE
+    if args.output_timezone is not None:
         output_timezone = args.output_timezone
     elif "output_timezone" in config:
         output_timezone = ZoneInfo(config["output_timezone"])
@@ -87,13 +94,58 @@ def main():
             print('please specify a timezone in the cli or config file')
             exit(1)
         print(f'warning, no output timezone specified in cli or config, using {output_timezone}')
-
-    start_date = args.start_date
-    end_date = args.end_date
-
-    if start_date is not None and end_date is not None and start_date >= end_date:
-        print('start date is after or the same as end date, no results would show')
+    
+    ### START AND END DATE FILTER (ALSO PERIODS)
+    if args.period is not None and (args.start_date or args.end_date):
+        print("Cannot use --period while also using date filter")
         exit(1)
+
+    if args.period is not None:
+        ### PERIOD SETTINGS
+        if args.period_settings is not None:
+            period_anchor, period_length = cast(Tuple[date,int],args.period_settings)
+        elif "period" in config:
+            if 'anchor' not in config['period']:
+                print('anchor missing from [period] section in config')
+                exit()
+            period_anchor = config['period']['anchor']
+            if not isinstance(period_anchor,date):
+                print(f"[period] anchor must be a date in YYYY-MM-DD format, got '{period_anchor}'")
+                exit()
+            
+            if 'length' not in config['period']:
+                print('length missing from [period] section in config')
+                exit()
+            period_length = config['period']['length']
+            if not isinstance(period_length,int):
+                print(f"[period] length must be an integer, got a type {type(period_length).__name__}")
+                exit()
+        else:
+            print('period settings not given, please specify with --period-settings cli option or [period] anchor and length config settings')
+            exit(1)
+        
+        # print(period_anchor, type(period_anchor))
+        # print(period_length,type(period_length))
+        # print(args.period)
+        # then come up with the start and end date
+
+        # how many days since the anchor (can be negative)
+        days_since_anchor = (date.today() - period_anchor).days
+        # which period is today a part of?
+        current_period_index = floor(days_since_anchor / period_length)
+        # offset index by the user's input (0 current, 1 previous, so on)
+        target_period_index = current_period_index - args.period
+        # shift that many days from the anchor
+        start_date = period_anchor + timedelta(days=target_period_index*period_length)
+        end_date = start_date + timedelta(days=period_length)
+        
+    else:
+        start_date = args.start_date
+        end_date = args.end_date
+
+        if start_date is not None and end_date is not None and start_date >= end_date:
+            print('start date is after or the same as end date, no results would show')
+            exit(1)
 
 
     print('using the following settings')
@@ -102,7 +154,8 @@ def main():
     print('start date:', start_date)
     print('end date:', end_date)
 
-        
+    exit()
+
     with open(input_path) as clock:
         txt = clock.read();
 
