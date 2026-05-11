@@ -25,7 +25,10 @@ def load_config() -> Dict[str,Any]:
 def parse_cli_start_date(date_str: str|None):
     if date_str is None or date_str in ("_", ""):
         return None
-    return date.fromisoformat(date_str)
+    try:
+        return date.fromisoformat(date_str)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid value '{date_str}', valid dates are 'YYYY-MM-DD' or '_'.")
     
 
 def format_timedelta(x: timedelta):
