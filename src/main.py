@@ -49,7 +49,8 @@ def main():
 
     parser.add_argument("-i", "--input", dest="timecard_path", help="Path to input file")
     parser.add_argument("-tz", "--timezone", dest="output_timezone", type=ZoneInfo, help="timezone to format output")
-
+    parser.add_argument("-j","--job",dest="job_filter",help="Job to filter by, required in period mode")
+    
     parser.add_argument("start_date", nargs="?", type=parse_cli_start_date, help="Optinal start date, can use _ as a placeholder (YYYY-MM-DD)")
     parser.add_argument("end_date", nargs="?", type=date.fromisoformat, help="Optinal end date, not including the day itself (YYYY-MM-DD)")
 
@@ -95,6 +96,22 @@ def main():
             exit(1)
         print(f'warning, no output timezone specified in cli or config, using {output_timezone}')
     
+    ### JOB FILTER
+    if args.job_filter is not None:
+        if args.job_filter == '_':
+            job_filter = None
+        job_filter = args.job_filter
+    elif "default_job" in config:
+        job_filter = config["default_job"]
+    else:
+        job_filter = None
+
+    if job_filter is not None and "jobs" in config and job_filter in config["jobs"]:
+        job_config = cast(Dict[str,Any],config["jobs"][job_filter])
+    else:
+        job_config: Dict[str,Any] = {}
+
+
     ### START AND END DATE FILTER (ALSO PERIODS)
     if args.period is not None and (args.start_date or args.end_date):
         print("Cannot use --period while also using date filter")
@@ -102,31 +119,31 @@ def main():
 
     if args.period is not None:
         ### PERIOD SETTINGS
+        if job_filter is None:
+            print('period mode requires a job filter set by -j [job] or in the config as default_job')
+            exit(1)
+
         if args.period_settings is not None:
             period_anchor, period_length = cast(Tuple[date,int],args.period_settings)
-        elif "period" in config:
-            if 'anchor' not in config['period']:
-                print('anchor missing from [period] section in config')
+        else:
+            if 'period_anchor' not in job_config and 'period_length' not in job_config:
+                print(f'period settings not given, please specify with --period-settings cli option or [jobs.{job_filter}] period_anchor and period_length config settings')
+                exit(1)
+            if 'period_anchor' not in job_config:
+                print(f'anchor missing from [jobs.{job_filter}] section in config')
                 exit()
-            period_anchor = config['period']['anchor']
+            period_anchor = job_config['period_anchor']
             if not isinstance(period_anchor,date):
-                print(f"[period] anchor must be a date in YYYY-MM-DD format, got '{period_anchor}'")
+                print(f"[jobs.{job_filter}] period_anchor must be a date in YYYY-MM-DD format, got '{period_anchor}'")
+                exit()
+            if 'period_length' not in job_config:
+                print(f'length missing from [jobs.{job_filter}] section in config')
+                exit()
+            period_length = job_config['period_length']
+            if not isinstance(period_length,int):
+                print(f"[jobs.{job_filter}] length must be an integer, got a type {type(period_length).__name__}")
                 exit()
             
-            if 'length' not in config['period']:
-                print('length missing from [period] section in config')
-                exit()
-            period_length = config['period']['length']
-            if not isinstance(period_length,int):
-                print(f"[period] length must be an integer, got a type {type(period_length).__name__}")
-                exit()
-        else:
-            print('period settings not given, please specify with --period-settings cli option or [period] anchor and length config settings')
-            exit(1)
-        
-        # print(period_anchor, type(period_anchor))
-        # print(period_length,type(period_length))
-        # print(args.period)
         # then come up with the start and end date
 
         # how many days since the anchor (can be negative)
@@ -151,6 +168,7 @@ def main():
     print('using the following settings')
     print('input file:', input_path)
     print('output timezone:', output_timezone)
+    print('job:', job_filter)
     print('start date:', start_date)
     print('end date:', end_date)
 
@@ -185,6 +203,11 @@ def main():
             raise Exception("not a valid clock out") #TODO Give a line number
         
         job = lines[0]
+
+        # filter by job here.
+        if job_filter is not None and job != job_filter:
+            continue
+
         description = ';;'.join(lines[3:])
         # extract time values
         localInTime = datetime.fromisoformat(lines[1][1:]).astimezone(output_timezone)
