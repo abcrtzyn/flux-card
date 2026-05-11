@@ -50,6 +50,7 @@ This section goes through details of all parameters that can be set on the comma
 | :--- | :--- | :--- | :--- | :--- |
 | **Input File** | `-i [path]` | `input_file` | *Error (Required)* | *Error (Required)* |
 | **Timezone** | `-tz [zone]` | `output_timezone` | *System Local* | *System Local* |
+| **Alt Config** | `-c [path]` | *N/A* | *\<repo root\>/config.toml* | *\<repo root\>/config.toml* |
 | **Job** | `-j [name]` | `default_job` | *No filter applied* | *Error (Required)* |
 | **Start Date** | `[param 1]` | *N/A* | *No minimum filter applied* ||
 | **End Date** | `[param 2]` | *N/A* | *No maximum filter* ||
@@ -71,6 +72,12 @@ Timezone to convert all clock times to. Accepts standard IANA identifiers (like 
 
 - **CLI**: `-tz [zone]` or `--timezone [zone]`
 - **Config**: `output_timezone`
+
+#### Alternate Config
+
+Alternate config file path. If you would like to have multiple configurations, this allows a quick method to switch between them. This would allow a seperate configuration setups for output formats or a different input file, among other things.
+
+- **CLI**: `-c [path]` or `--config [path]`; absolute path or path relative to cwd
 
 #### Job
 

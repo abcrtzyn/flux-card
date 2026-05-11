@@ -16,14 +16,6 @@ from segments import Segment
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-def load_config() -> Dict[str,Any]:
-    config_input_path = REPO_ROOT / "config.toml"
-    if not config_input_path.exists():
-        return {}
-    
-    with open(config_input_path, "rb") as f:
-        return tomllib.load(f)
-
 def parse_cli_start_date(date_str: str|None):
     if date_str is None or date_str in ("_", ""):
         return None
@@ -43,14 +35,15 @@ def format_timedelta(x: timedelta):
 
 
 def main():
-    config = load_config()
 
-    parser = argparse.ArgumentParser(prog="fluxcard")
+    parser = argparse.ArgumentParser(prog="fluxcard",description="Summarize clock in sessions from the input file.\nUses settings from command line and config.toml")
 
     parser.add_argument("-i", "--input", dest="timecard_path", help="Path to input file")
     parser.add_argument("-tz", "--timezone", dest="output_timezone", type=ZoneInfo, help="timezone to format output")
+    parser.add_argument("-c","--config",dest="alt_config",help="Alternate config file path")
     parser.add_argument("-j","--job",dest="job_filter",help="Job to filter by, required in period mode")
-    
+
+
     parser.add_argument("start_date", nargs="?", type=parse_cli_start_date, help="Optinal start date, can use _ as a placeholder (YYYY-MM-DD)")
     parser.add_argument("end_date", nargs="?", type=date.fromisoformat, help="Optinal end date, not including the day itself (YYYY-MM-DD)")
 
@@ -58,6 +51,24 @@ def main():
     parser.add_argument("--period-settings",nargs=2,action=PeriodSettingsAction, metavar=("ANCHOR_DATE","LENGTH"), help="anchor point date (YYYY-MM-DD) and period length in days used in period mode")
 
     args = parser.parse_args()
+
+    ### CONFIG FILE
+    if args.alt_config is not None:
+        # check that given config file exists
+        alt_config_path = Path(args.alt_config).resolve()
+        if not alt_config_path.exists():
+            print(f'config file at "{alt_config_path}" does not exist')
+            exit(1)
+        
+        with open(alt_config_path, "rb") as f:
+            config = tomllib.load(f)
+    else:
+        config_input_path = REPO_ROOT / "config.toml"
+        if not config_input_path.exists():
+            config: Dict[str,Any] = {}
+    
+        with open(config_input_path, "rb") as f:
+            config = tomllib.load(f)
 
     ### INPUT PATH
     if args.timecard_path is not None:
