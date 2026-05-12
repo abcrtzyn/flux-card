@@ -2,19 +2,60 @@
 
 import argparse
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, time, timedelta, date
 from math import floor
 import os
 from pathlib import Path
-import tomllib
-from typing import Any, List, Dict, Tuple, cast
+from typing import List, Dict, Tuple
 from zoneinfo import ZoneInfo
 
+from config import AppConfig, JobConfig
 from period_settings_parser import PeriodSettingsAction
 from segments import Segment
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+@dataclass
+class ParsedArgs:
+    timecard_path: Path | None
+    output_timezone: ZoneInfo | None
+    alt_config: Path | None
+    job_filter: str | None
+    start_date: date | None
+    end_date: date | None
+    period: int | None
+    period_settings: Tuple[date, int] | None
+
+def parse_args() -> ParsedArgs:
+    parser = argparse.ArgumentParser(prog="fluxcard",description="Summarize clock in sessions from the input file.\nUses settings from command line and config.toml")
+
+    parser.add_argument("-i", "--input", dest="timecard_path", type=lambda x: Path(x) if x else None, help="Path to input file")
+    parser.add_argument("-tz", "--timezone", dest="output_timezone", type=ZoneInfo, help="timezone to format output")
+    parser.add_argument("-c","--config",dest="alt_config", type=lambda x: Path(x) if x else None, help="Alternate config file path")
+    parser.add_argument("-j","--job",dest="job_filter",help="Job to filter by, required in period mode")
+
+
+    parser.add_argument("start_date", nargs="?", type=parse_cli_start_date, help="Optinal start date, can use _ as a placeholder (YYYY-MM-DD)")
+    parser.add_argument("end_date", nargs="?", type=date.fromisoformat, help="Optinal end date, not including the day itself (YYYY-MM-DD)")
+
+    parser.add_argument("-p", "--period", type=int, help="Period index (0=current, 1=previous, etc.), replaces date filtering mode")
+    parser.add_argument("--period-settings",nargs=2,action=PeriodSettingsAction, metavar=("ANCHOR_DATE","LENGTH"), help="anchor point date (YYYY-MM-DD) and period length in days used in period mode")
+
+    raw_args = parser.parse_args()
+
+    return ParsedArgs(
+        timecard_path=raw_args.timecard_path,
+        output_timezone=raw_args.output_timezone,
+        alt_config=raw_args.alt_config,
+        job_filter=raw_args.job_filter,
+        start_date=raw_args.start_date,
+        end_date=raw_args.end_date,
+        period=raw_args.period,
+        period_settings=raw_args.period_settings,
+    )
+
 
 def parse_cli_start_date(date_str: str|None):
     if date_str is None or date_str in ("_", ""):
@@ -24,39 +65,32 @@ def parse_cli_start_date(date_str: str|None):
     except ValueError:
         raise argparse.ArgumentTypeError(f"invalid value '{date_str}', valid dates are 'YYYY-MM-DD' or '_'.")
 
-def get_config(args: argparse.Namespace):
+def get_config(args: ParsedArgs) -> AppConfig:
+    # check for alternate config parameter
     if args.alt_config is not None:
-        # check that given config file exists
         alt_config_path = Path(args.alt_config).resolve()
         if not alt_config_path.exists():
             print(f'config file at "{alt_config_path}" does not exist')
             exit(1)
-        
-        with open(alt_config_path, "rb") as f:
-            config = tomllib.load(f)
-    else:
-        config_input_path = REPO_ROOT / "config.toml"
-        if not config_input_path.exists():
-            config: Dict[str,Any] = {}
-    
-        with open(config_input_path, "rb") as f:
-            config = tomllib.load(f)
-    return config
+        return AppConfig.load(alt_config_path)
+    # if no alternate, use the standard config file
+    config_input_path = REPO_ROOT / "config.toml"
+    if config_input_path.exists():
+        return AppConfig.load(config_input_path)
+    # if no standard, use empty config
+    return AppConfig()
 
-def get_input_path(args: argparse.Namespace, config: Dict[str,Any]):
+def get_input_path(args: ParsedArgs, config: AppConfig):
+    
     if args.timecard_path is not None:
         input_path = Path(args.timecard_path).resolve()
     else:
         # grab config timecard file
-        if "timecard_path" not in config:
+        input_path = config.timecard_path
+        if input_path is None:
             print('"timecard_path" must be specified in config or given as a command line argument')
             exit(1)
-        p = Path(config["timecard_path"]).expanduser()
-        if p.is_absolute():
-            input_path = p
-        else:
-            input_path = (REPO_ROOT / p).resolve()
-
+    
     if not input_path.exists():
         print(f"file not found: {input_path}")
         exit(1)
@@ -68,68 +102,54 @@ def get_input_path(args: argparse.Namespace, config: Dict[str,Any]):
         exit(1)
     return input_path
 
-def get_output_timezone(args: argparse.Namespace, config: Dict[str,Any]):
+def get_output_timezone(args: ParsedArgs, config: AppConfig):
     if args.output_timezone is not None:
-        output_timezone = args.output_timezone
-    elif "output_timezone" in config:
-        output_timezone = ZoneInfo(config["output_timezone"])
-    else:
-        output_timezone = datetime.now().astimezone().tzinfo
-        if output_timezone is None:
-            print('no output timezone specified in cli or config, tried to use system timezone but found none')
-            print('please specify a timezone in the cli or config file')
-            exit(1)
-        print(f'warning, no output timezone specified in cli or config, using {output_timezone}')
+        return args.output_timezone
+    if config.output_timezone is not None:
+        return ZoneInfo(config.output_timezone)
+    
+    output_timezone = datetime.now().astimezone().tzinfo
+    if output_timezone is None:
+        print('no output timezone specified in cli or config, tried to use system timezone but found none')
+        print('please specify a timezone in the cli or config file')
+        exit(1)
+    print(f'warning, no output timezone specified in cli or config, using {output_timezone}')
     return output_timezone
 
-def get_job_filter(args: argparse.Namespace, config: Dict[str,Any]):
+def get_job_filter(args: ParsedArgs, config: AppConfig):
     if args.job_filter is not None:
         if args.job_filter == '_':
-            job_filter = None
-        job_filter = args.job_filter
-    elif "default_job" in config:
-        job_filter = config["default_job"]
-    else:
-        job_filter = None
+            return None
+        return args.job_filter
+    
+    if config.default_job is not None:
+        return config.default_job
+    
+    return None
 
-    return job_filter
 
-def get_job_config(job_filter: str | None, config: Dict[str,Any]):
-    if job_filter is not None and "jobs" in config and job_filter in config["jobs"]:
-        job_config = cast(Dict[str,Any],config["jobs"][job_filter])
-    else:
-        job_config: Dict[str,Any] = {}
-
-    return job_config
-
-def get_period_settings(args: argparse.Namespace, job_filter: str | None, job_config: Dict[str,Any]):
+def get_period_settings(args: ParsedArgs, job_filter: str | None, job_config: JobConfig):
     if job_filter is None:
         print('period mode requires a job filter set by -j [job] or in the config as default_job')
         exit(1)
 
     if args.period_settings is not None:
-        period_anchor, period_length = cast(Tuple[date,int],args.period_settings)
-    else:
-        if 'period_anchor' not in job_config and 'period_length' not in job_config:
-            print(f'period settings not given, please specify with --period-settings cli option or [jobs.{job_filter}] period_anchor and period_length config settings')
-            exit(1)
-        if 'period_anchor' not in job_config:
-            print(f'anchor missing from [jobs.{job_filter}] section in config')
-            exit()
-        period_anchor = job_config['period_anchor']
-        if not isinstance(period_anchor,date):
-            print(f"[jobs.{job_filter}] period_anchor must be a date in YYYY-MM-DD format, got '{period_anchor}'")
-            exit()
-        if 'period_length' not in job_config:
-            print(f'length missing from [jobs.{job_filter}] section in config')
-            exit()
-        period_length = job_config['period_length']
-        if not isinstance(period_length,int):
-            print(f"[jobs.{job_filter}] length must be an integer, got a type {type(period_length).__name__}")
-            exit()
-    return period_anchor,period_length
+        return args.period_settings
+    
+    if job_config.period_anchor is None and job_config.period_length is None:
+        print(f'period settings not given, please specify with --period-settings cli option or [jobs.{job_filter}] period_anchor and period_length config settings')
+        exit(1)
+    if job_config.period_anchor is None:
+        print(f'anchor missing from [jobs.{job_filter}] section in config')
+        exit()
+    if job_config.period_length is None:
+        print(f'length missing from [jobs.{job_filter}] section in config')
+        exit()
+    
+    return job_config.period_anchor, job_config.period_length
 
-def get_date_filters(args: argparse.Namespace, job_filter: str | None, job_config: Dict[str,Any]):
+
+def get_date_filters(args: ParsedArgs, job_filter: str | None, job_config: JobConfig):
     if args.period is not None and (args.start_date or args.end_date):
         print("Cannot use --period while also using date filter")
         exit(1)
@@ -173,28 +193,13 @@ def format_timedelta(x: timedelta):
 
 
 def main():
-
-    parser = argparse.ArgumentParser(prog="fluxcard",description="Summarize clock in sessions from the input file.\nUses settings from command line and config.toml")
-
-    parser.add_argument("-i", "--input", dest="timecard_path", help="Path to input file")
-    parser.add_argument("-tz", "--timezone", dest="output_timezone", type=ZoneInfo, help="timezone to format output")
-    parser.add_argument("-c","--config",dest="alt_config",help="Alternate config file path")
-    parser.add_argument("-j","--job",dest="job_filter",help="Job to filter by, required in period mode")
-
-
-    parser.add_argument("start_date", nargs="?", type=parse_cli_start_date, help="Optinal start date, can use _ as a placeholder (YYYY-MM-DD)")
-    parser.add_argument("end_date", nargs="?", type=date.fromisoformat, help="Optinal end date, not including the day itself (YYYY-MM-DD)")
-
-    parser.add_argument("-p", "--period", type=int, help="Period index (0=current, 1=previous, etc.), replaces date filtering mode")
-    parser.add_argument("--period-settings",nargs=2,action=PeriodSettingsAction, metavar=("ANCHOR_DATE","LENGTH"), help="anchor point date (YYYY-MM-DD) and period length in days used in period mode")
-
-    args = parser.parse_args()
+    args = parse_args()
 
     config = get_config(args)
     input_path = get_input_path(args, config)
     output_timezone = get_output_timezone(args, config)
     job_filter = get_job_filter(args, config)
-    job_config = get_job_config(job_filter, config)
+    job_config = config.job_config(job_filter)
     start_date, end_date = get_date_filters(args, job_filter, job_config)
 
 
