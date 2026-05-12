@@ -4,6 +4,7 @@ from datetime import date
 from pathlib import Path
 import tomllib
 from typing import Any, Dict, cast
+from zoneinfo import ZoneInfo
 
 from error import FluxCardInputError
 
@@ -31,7 +32,7 @@ class JobConfig:
 @dataclass(frozen=True)
 class AppConfig:
     timecard_path: Path | None = field(default=None)
-    output_timezone: str | None = field(default=None)
+    output_timezone: ZoneInfo | None = field(default=None)
     default_job: str | None = field(default=None)
     jobs: Dict[str, JobConfig] = cast(Dict[str, JobConfig],field(default_factory=dict))
     
@@ -46,13 +47,16 @@ class AppConfig:
         else:
             timecard_path = None
         
+        output_timezone_str = cast(str|None,raw.get("output_timezone"))
+        output_timezone = ZoneInfo(output_timezone_str) if output_timezone_str else None
+
         jobs: Dict[str,JobConfig] = {}
         for name, value in raw.get("jobs", {}).items():
             jobs[name] = JobConfig.from_dict(value)
         
         return cls(
             timecard_path=timecard_path,
-            output_timezone = raw.get("output_timezone"),
+            output_timezone = output_timezone,
             default_job=raw.get("default_job"),
             jobs=jobs
         )

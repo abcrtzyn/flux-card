@@ -102,7 +102,7 @@ def get_output_timezone(args: ParsedArgs, config: AppConfig):
     if args.output_timezone is not None:
         return args.output_timezone
     if config.output_timezone is not None:
-        return ZoneInfo(config.output_timezone)
+        return config.output_timezone
     
     output_timezone = datetime.now().astimezone().tzinfo
     if output_timezone is None:
@@ -193,6 +193,9 @@ def main():
     except FluxCardInputError as e:
         print(e, file=sys.stderr)
         sys.exit(1)
+    except Exception as e:
+        e.add_note('this should probably be added as a FluxCardInputError')
+        raise e
     except SystemExit:
         raise
 
