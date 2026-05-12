@@ -7,13 +7,14 @@ from datetime import datetime, time, timedelta, date
 from math import floor
 import os
 from pathlib import Path
+import sys
 from typing import List, Dict, Tuple
 from zoneinfo import ZoneInfo
 
 from config import AppConfig, JobConfig
+from error import FluxCardInputError
 from period_settings_parser import PeriodSettingsAction
 from segments import Segment
-
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -70,8 +71,7 @@ def get_config(args: ParsedArgs) -> AppConfig:
     if args.alt_config is not None:
         alt_config_path = Path(args.alt_config).resolve()
         if not alt_config_path.exists():
-            print(f'config file at "{alt_config_path}" does not exist')
-            exit(1)
+            raise FluxCardInputError(f'config file at "{alt_config_path}" does not exist')
         return AppConfig.load(alt_config_path)
     # if no alternate, use the standard config file
     config_input_path = REPO_ROOT / "config.toml"
@@ -88,18 +88,14 @@ def get_input_path(args: ParsedArgs, config: AppConfig):
         # grab config timecard file
         input_path = config.timecard_path
         if input_path is None:
-            print('"timecard_path" must be specified in config or given as a command line argument')
-            exit(1)
+            raise FluxCardInputError('"timecard_path" must be specified in config or given as a command line argument')
     
     if not input_path.exists():
-        print(f"file not found: {input_path}")
-        exit(1)
+        raise FluxCardInputError(f"file not found: {input_path}")
     if not input_path.is_file():
-        print(f"timecard file is not a file: {input_path}")
-        exit(1)
+        raise FluxCardInputError(f"timecard file is not a file: {input_path}")
     if not os.access(input_path, os.R_OK):
-        print(f"Do not have permission to read file: {input_path}")
-        exit(1)
+        raise FluxCardInputError(f"Do not have permission to read file: {input_path}")
     return input_path
 
 def get_output_timezone(args: ParsedArgs, config: AppConfig):
@@ -110,10 +106,8 @@ def get_output_timezone(args: ParsedArgs, config: AppConfig):
     
     output_timezone = datetime.now().astimezone().tzinfo
     if output_timezone is None:
-        print('no output timezone specified in cli or config, tried to use system timezone but found none')
-        print('please specify a timezone in the cli or config file')
-        exit(1)
-    print(f'warning, no output timezone specified in cli or config, using {output_timezone}')
+        raise FluxCardInputError('no output timezone specified in cli or config, tried to use system timezone but found none\nplease specify a timezone in the cli or config file')
+    print(f'warning, no output timezone specified in cli or config, using {output_timezone}',file=sys.stderr)
     return output_timezone
 
 def get_job_filter(args: ParsedArgs, config: AppConfig):
@@ -130,29 +124,24 @@ def get_job_filter(args: ParsedArgs, config: AppConfig):
 
 def get_period_settings(args: ParsedArgs, job_filter: str | None, job_config: JobConfig):
     if job_filter is None:
-        print('period mode requires a job filter set by -j [job] or in the config as default_job')
-        exit(1)
+        raise FluxCardInputError('period mode requires a job filter set by -j [job] or in the config as default_job')
 
     if args.period_settings is not None:
         return args.period_settings
     
     if job_config.period_anchor is None and job_config.period_length is None:
-        print(f'period settings not given, please specify with --period-settings cli option or [jobs.{job_filter}] period_anchor and period_length config settings')
-        exit(1)
+        raise FluxCardInputError(f'period settings not given, please specify with --period-settings cli option or [jobs.{job_filter}] period_anchor and period_length config settings')
     if job_config.period_anchor is None:
-        print(f'anchor missing from [jobs.{job_filter}] section in config')
-        exit()
+        raise FluxCardInputError(f'anchor missing from [jobs.{job_filter}] section in config')
     if job_config.period_length is None:
-        print(f'length missing from [jobs.{job_filter}] section in config')
-        exit()
+        raise FluxCardInputError(f'length missing from [jobs.{job_filter}] section in config')
     
     return job_config.period_anchor, job_config.period_length
 
 
 def get_date_filters(args: ParsedArgs, job_filter: str | None, job_config: JobConfig):
     if args.period is not None and (args.start_date or args.end_date):
-        print("Cannot use --period while also using date filter")
-        exit(1)
+        raise FluxCardInputError("Cannot use --period while also using date filter")
 
     if args.period is not None:
         period_anchor, period_length = get_period_settings(args, job_filter, job_config)
@@ -165,8 +154,7 @@ def get_date_filters(args: ParsedArgs, job_filter: str | None, job_config: JobCo
         end_date = args.end_date
 
         if start_date is not None and end_date is not None and start_date >= end_date:
-            print('start date is after or the same as end date, no results would show')
-            exit(1)
+            raise FluxCardInputError('start date is after or the same as end date, no results would show')
     return start_date, end_date
 
 def calulate_period_date_range(period_anchor: date, period_length: int, period_offset: int):
@@ -193,15 +181,20 @@ def format_timedelta(x: timedelta):
 
 
 def main():
-    args = parse_args()
+    try:
+        args = parse_args()
 
-    config = get_config(args)
-    input_path = get_input_path(args, config)
-    output_timezone = get_output_timezone(args, config)
-    job_filter = get_job_filter(args, config)
-    job_config = config.job_config(job_filter)
-    start_date, end_date = get_date_filters(args, job_filter, job_config)
-
+        config = get_config(args)
+        input_path = get_input_path(args, config)
+        output_timezone = get_output_timezone(args, config)
+        job_filter = get_job_filter(args, config)
+        job_config = config.job_config(job_filter)
+        start_date, end_date = get_date_filters(args, job_filter, job_config)
+    except FluxCardInputError as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
+    except SystemExit:
+        raise
 
     print('using the following settings')
     print('input file:', input_path)

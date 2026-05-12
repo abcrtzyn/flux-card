@@ -5,6 +5,8 @@ from pathlib import Path
 import tomllib
 from typing import Any, Dict, cast
 
+from error import FluxCardInputError
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -18,12 +20,11 @@ class JobConfig:
     def from_dict(cls, raw: Dict[str, Any]) -> "JobConfig":
         anchor = raw.get("period_anchor")
         if not isinstance(anchor,date):
-            print(f"period_anchor must be a date in YYYY-MM-DD format, got '{anchor}'")
-            exit(1)
+            raise FluxCardInputError(f"period_anchor must be a date in YYYY-MM-DD format, got '{anchor}'")
+            
         length = raw.get("period_length")
         if not isinstance(length,int):
-            print(f"period_anchor must be a date in YYYY-MM-DD format, got '{anchor}'")
-            exit(1)
+            raise FluxCardInputError(f"period_anchor must be a date in YYYY-MM-DD format, got '{anchor}'")
 
         return cls(period_anchor=anchor,period_length=length)
 

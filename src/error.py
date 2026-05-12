@@ -1,0 +1,2 @@
+class FluxCardInputError(Exception):
+    pass
