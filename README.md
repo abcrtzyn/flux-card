@@ -27,7 +27,7 @@ Lots of setup steps here, please follow them carefully.
         - Where is the Clock file located
         - (Clock out) Do you want to add descriptions
 4. Setup the python environment (optional)
-    - the environment allows the use of `fluxcard` or `fc` as a shell command as a replacement for `python3 src/main.py` and that is about it.
+    - the environment allows the use of `fluxcard` or `flux` as a shell command as a replacement for `python3 src/main.py` and that is about it.
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
