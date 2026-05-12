@@ -23,7 +23,145 @@ def parse_cli_start_date(date_str: str|None):
         return date.fromisoformat(date_str)
     except ValueError:
         raise argparse.ArgumentTypeError(f"invalid value '{date_str}', valid dates are 'YYYY-MM-DD' or '_'.")
+
+def get_config(args: argparse.Namespace):
+    if args.alt_config is not None:
+        # check that given config file exists
+        alt_config_path = Path(args.alt_config).resolve()
+        if not alt_config_path.exists():
+            print(f'config file at "{alt_config_path}" does not exist')
+            exit(1)
+        
+        with open(alt_config_path, "rb") as f:
+            config = tomllib.load(f)
+    else:
+        config_input_path = REPO_ROOT / "config.toml"
+        if not config_input_path.exists():
+            config: Dict[str,Any] = {}
     
+        with open(config_input_path, "rb") as f:
+            config = tomllib.load(f)
+    return config
+
+def get_input_path(args: argparse.Namespace, config: Dict[str,Any]):
+    if args.timecard_path is not None:
+        input_path = Path(args.timecard_path).resolve()
+    else:
+        # grab config timecard file
+        if "timecard_path" not in config:
+            print('"timecard_path" must be specified in config or given as a command line argument')
+            exit(1)
+        p = Path(config["timecard_path"]).expanduser()
+        if p.is_absolute():
+            input_path = p
+        else:
+            input_path = (REPO_ROOT / p).resolve()
+
+    if not input_path.exists():
+        print(f"file not found: {input_path}")
+        exit(1)
+    if not input_path.is_file():
+        print(f"timecard file is not a file: {input_path}")
+        exit(1)
+    if not os.access(input_path, os.R_OK):
+        print(f"Do not have permission to read file: {input_path}")
+        exit(1)
+    return input_path
+
+def get_output_timezone(args: argparse.Namespace, config: Dict[str,Any]):
+    if args.output_timezone is not None:
+        output_timezone = args.output_timezone
+    elif "output_timezone" in config:
+        output_timezone = ZoneInfo(config["output_timezone"])
+    else:
+        output_timezone = datetime.now().astimezone().tzinfo
+        if output_timezone is None:
+            print('no output timezone specified in cli or config, tried to use system timezone but found none')
+            print('please specify a timezone in the cli or config file')
+            exit(1)
+        print(f'warning, no output timezone specified in cli or config, using {output_timezone}')
+    return output_timezone
+
+def get_job_filter(args: argparse.Namespace, config: Dict[str,Any]):
+    if args.job_filter is not None:
+        if args.job_filter == '_':
+            job_filter = None
+        job_filter = args.job_filter
+    elif "default_job" in config:
+        job_filter = config["default_job"]
+    else:
+        job_filter = None
+
+    return job_filter
+
+def get_job_config(job_filter: str | None, config: Dict[str,Any]):
+    if job_filter is not None and "jobs" in config and job_filter in config["jobs"]:
+        job_config = cast(Dict[str,Any],config["jobs"][job_filter])
+    else:
+        job_config: Dict[str,Any] = {}
+
+    return job_config
+
+def get_period_settings(args: argparse.Namespace, job_filter: str | None, job_config: Dict[str,Any]):
+    if job_filter is None:
+        print('period mode requires a job filter set by -j [job] or in the config as default_job')
+        exit(1)
+
+    if args.period_settings is not None:
+        period_anchor, period_length = cast(Tuple[date,int],args.period_settings)
+    else:
+        if 'period_anchor' not in job_config and 'period_length' not in job_config:
+            print(f'period settings not given, please specify with --period-settings cli option or [jobs.{job_filter}] period_anchor and period_length config settings')
+            exit(1)
+        if 'period_anchor' not in job_config:
+            print(f'anchor missing from [jobs.{job_filter}] section in config')
+            exit()
+        period_anchor = job_config['period_anchor']
+        if not isinstance(period_anchor,date):
+            print(f"[jobs.{job_filter}] period_anchor must be a date in YYYY-MM-DD format, got '{period_anchor}'")
+            exit()
+        if 'period_length' not in job_config:
+            print(f'length missing from [jobs.{job_filter}] section in config')
+            exit()
+        period_length = job_config['period_length']
+        if not isinstance(period_length,int):
+            print(f"[jobs.{job_filter}] length must be an integer, got a type {type(period_length).__name__}")
+            exit()
+    return period_anchor,period_length
+
+def get_date_filters(args: argparse.Namespace, job_filter: str | None, job_config: Dict[str,Any]):
+    if args.period is not None and (args.start_date or args.end_date):
+        print("Cannot use --period while also using date filter")
+        exit(1)
+
+    if args.period is not None:
+        period_anchor, period_length = get_period_settings(args, job_filter, job_config)
+            
+        # then come up with the start and end date
+        start_date, end_date = calulate_period_date_range(period_anchor, period_length, args.period)
+        
+    else:
+        start_date = args.start_date
+        end_date = args.end_date
+
+        if start_date is not None and end_date is not None and start_date >= end_date:
+            print('start date is after or the same as end date, no results would show')
+            exit(1)
+    return start_date, end_date
+
+def calulate_period_date_range(period_anchor: date, period_length: int, period_offset: int):
+    # how many days since the anchor (can be negative)
+    days_since_anchor = (date.today() - period_anchor).days
+    # which period is today a part of?
+    current_period_index = floor(days_since_anchor / period_length)
+    # offset index by the user's input (0 current, 1 previous, so on)
+    target_period_index = current_period_index - period_offset
+    # shift that many days from the anchor
+    start_date = period_anchor + timedelta(days=target_period_index*period_length)
+    end_date = start_date + timedelta(days=period_length)
+
+    return start_date, end_date
+
 
 def format_timedelta(x: timedelta):
     "Quick function for formatting a timedelta"
@@ -52,128 +190,12 @@ def main():
 
     args = parser.parse_args()
 
-    ### CONFIG FILE
-    if args.alt_config is not None:
-        # check that given config file exists
-        alt_config_path = Path(args.alt_config).resolve()
-        if not alt_config_path.exists():
-            print(f'config file at "{alt_config_path}" does not exist')
-            exit(1)
-        
-        with open(alt_config_path, "rb") as f:
-            config = tomllib.load(f)
-    else:
-        config_input_path = REPO_ROOT / "config.toml"
-        if not config_input_path.exists():
-            config: Dict[str,Any] = {}
-    
-        with open(config_input_path, "rb") as f:
-            config = tomllib.load(f)
-
-    ### INPUT PATH
-    if args.timecard_path is not None:
-        input_path = Path(args.timecard_path).resolve()
-    else:
-        # grab config timecard file
-        if "timecard_path" not in config:
-            print('"timecard_path" must be specified in config or given as a command line argument')
-            exit(1)
-        p = Path(config["timecard_path"]).expanduser()
-        if p.is_absolute():
-            input_path = p
-        else:
-            input_path = (REPO_ROOT / p).resolve()
-
-    if not input_path.exists():
-        print(f"file not found: {input_path}")
-        exit(1)
-    if not input_path.is_file():
-        print(f"timecard file is not a file: {input_path}")
-        exit(1)
-    if not os.access(input_path, os.R_OK):
-        print(f"Do not have permission to read file: {input_path}")
-        exit(1)
-
-    ### OUTPUT TIMEZONE
-    if args.output_timezone is not None:
-        output_timezone = args.output_timezone
-    elif "output_timezone" in config:
-        output_timezone = ZoneInfo(config["output_timezone"])
-    else:
-        output_timezone = datetime.now().astimezone().tzinfo
-        if output_timezone is None:
-            print('no output timezone specified in cli or config, tried to use system timezone but found none')
-            print('please specify a timezone in the cli or config file')
-            exit(1)
-        print(f'warning, no output timezone specified in cli or config, using {output_timezone}')
-    
-    ### JOB FILTER
-    if args.job_filter is not None:
-        if args.job_filter == '_':
-            job_filter = None
-        job_filter = args.job_filter
-    elif "default_job" in config:
-        job_filter = config["default_job"]
-    else:
-        job_filter = None
-
-    if job_filter is not None and "jobs" in config and job_filter in config["jobs"]:
-        job_config = cast(Dict[str,Any],config["jobs"][job_filter])
-    else:
-        job_config: Dict[str,Any] = {}
-
-
-    ### START AND END DATE FILTER (ALSO PERIODS)
-    if args.period is not None and (args.start_date or args.end_date):
-        print("Cannot use --period while also using date filter")
-        exit(1)
-
-    if args.period is not None:
-        ### PERIOD SETTINGS
-        if job_filter is None:
-            print('period mode requires a job filter set by -j [job] or in the config as default_job')
-            exit(1)
-
-        if args.period_settings is not None:
-            period_anchor, period_length = cast(Tuple[date,int],args.period_settings)
-        else:
-            if 'period_anchor' not in job_config and 'period_length' not in job_config:
-                print(f'period settings not given, please specify with --period-settings cli option or [jobs.{job_filter}] period_anchor and period_length config settings')
-                exit(1)
-            if 'period_anchor' not in job_config:
-                print(f'anchor missing from [jobs.{job_filter}] section in config')
-                exit()
-            period_anchor = job_config['period_anchor']
-            if not isinstance(period_anchor,date):
-                print(f"[jobs.{job_filter}] period_anchor must be a date in YYYY-MM-DD format, got '{period_anchor}'")
-                exit()
-            if 'period_length' not in job_config:
-                print(f'length missing from [jobs.{job_filter}] section in config')
-                exit()
-            period_length = job_config['period_length']
-            if not isinstance(period_length,int):
-                print(f"[jobs.{job_filter}] length must be an integer, got a type {type(period_length).__name__}")
-                exit()
-            
-        # then come up with the start and end date
-
-        # how many days since the anchor (can be negative)
-        days_since_anchor = (date.today() - period_anchor).days
-        # which period is today a part of?
-        current_period_index = floor(days_since_anchor / period_length)
-        # offset index by the user's input (0 current, 1 previous, so on)
-        target_period_index = current_period_index - args.period
-        # shift that many days from the anchor
-        start_date = period_anchor + timedelta(days=target_period_index*period_length)
-        end_date = start_date + timedelta(days=period_length)
-        
-    else:
-        start_date = args.start_date
-        end_date = args.end_date
-
-        if start_date is not None and end_date is not None and start_date >= end_date:
-            print('start date is after or the same as end date, no results would show')
-            exit(1)
+    config = get_config(args)
+    input_path = get_input_path(args, config)
+    output_timezone = get_output_timezone(args, config)
+    job_filter = get_job_filter(args, config)
+    job_config = get_job_config(job_filter, config)
+    start_date, end_date = get_date_filters(args, job_filter, job_config)
 
 
     print('using the following settings')
@@ -294,7 +316,7 @@ def main():
             
             card.write(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
             card.write(f"Total\t\t\t{format_timedelta(total_hours)}\n\n\n")
-            # print();
+
 
 if __name__ == "__main__":
     main()
