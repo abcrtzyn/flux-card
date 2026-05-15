@@ -3,12 +3,12 @@
 import argparse
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta, date
+from datetime import datetime, time, timedelta, date # pyright: ignore[reportPrivateUsage]
 from math import floor
 import os
 from pathlib import Path
 import sys
-from typing import List, Dict, Tuple
+from typing import Iterator, List, Dict, Tuple
 from zoneinfo import ZoneInfo
 
 from config import AppConfig, JobConfig
@@ -176,6 +176,128 @@ def format_timedelta(x: timedelta):
     return f"{hr}:{mn:02}:{s:02}"
 
 
+def check_file_terminator(input_path: Path) -> None:
+    """Check that the file terminates properly, will raise an error if not"""
+    with open(input_path,"rb") as f:
+        try:
+            f.seek(-3,os.SEEK_END)
+            terminator = f.read(3).decode()
+            if terminator != '\n==':
+                raise FluxCardInputError("The file does not end with a douple equals, are you still clocked in? Or does the file end with a newline?")
+        except OSError:
+            # less than three bytes.
+            # expecting the first line with '==' and that is it
+            f.seek(0)
+            text = f.read().decode()
+            if text != '==':
+                raise FluxCardInputError("The file does not end with a douple equals, does the file end with a newline?")
+
+
+def read_segment_lines(input_path: Path) -> Iterator[Tuple[Tuple[Path, int], List[str]]]:
+    """Yields each block between lines with ==
+    Note that this is very sensitive to lines, if the split line isn't exactly ==, it won't split it"""
+    with open(input_path) as f:
+        # check for a seperator at the top of the file
+        line = f.readline().strip()
+        if line != '==':
+            raise FluxCardInputError('timecard must start with an "==" line',f"Invalid line 1: {line}")
+        
+        segment_start = 2
+        segment_lines: List[str] = []
+        # read the rest of the file
+        # the lines iterator then starts on the next line
+        for line_num, line in enumerate(f,start=2):
+            line = line.strip()
+            if line == "==":
+                yield (input_path, segment_start), segment_lines
+                segment_lines = []
+                segment_start = line_num + 1
+            else:
+                segment_lines.append(line)
+
+
+def parse_timestamp_line(line: str, loc_info: Tuple[Path,int],prefix:str) -> datetime:
+    if not line.startswith(prefix):
+        raise ValueError(f"Parsing Error. {loc_info[0]}:{loc_info[1]} in time line must begin with a '{prefix}' character")
+    try:
+        return datetime.fromisoformat(line[len(prefix):])
+    except ValueError as e:
+        e.add_note(f"occured at {loc_info[0]}:{loc_info[1]}")
+        raise e
+
+def parse_timecard_segment(lines: List[str], loc_info: Tuple[Path,int], tz: ZoneInfo):
+    if len(lines) == 0:
+            raise ValueError(f"Parsing Error. {loc_info[0]}:{loc_info[1]} empty record marked by consectutive == lines")
+    if len(lines) < 4:
+        raise ValueError(f"Parsing Error. {loc_info[0]}:{loc_info[1]} not enough lines in this record, expecting lines job, intime, outtime, at least one description line (can be empty)")
+
+    job = lines[0]
+    in_line = lines[1]
+    out_line = lines[2]
+    description = ";;".join(lines[3:])
+    local_in = parse_timestamp_line(in_line,(loc_info[0],loc_info[1]+1),'>').astimezone(tz)
+    local_out = parse_timestamp_line(out_line,(loc_info[0],loc_info[1]+2),'<').astimezone(tz)
+    
+    return Segment(job,local_in,local_out,description)
+
+
+def split_across_midnight(segment: Segment, tz: ZoneInfo):
+    current_start = segment.inTime
+        
+    # deal with in-outs that pass on multiple days
+    while segment.outTime.date() > current_start.date():
+        # Create a midnight marker at 23:59:59.99 for the current day
+        current = current_start
+        end_of_day = current.replace(hour=23, minute=59, second=59)
+        
+        yield Segment(segment.job,current_start,end_of_day,segment.description)
+        
+        # Set the start of the next segment to 00:00:00 of the following day
+        next_day = current.date() + timedelta(days=1)
+        current_start = datetime.combine(next_day, time.min, tzinfo=tz)
+    
+    yield Segment(segment.job, current_start, segment.outTime, segment.description)
+
+
+def parse_segments(segments: Iterator[Tuple[Tuple[Path,int],List[str]]],output_timezone: ZoneInfo) -> Iterator[Segment]:
+    for loc_info, lines in segments:
+        segment = parse_timecard_segment(lines,loc_info,output_timezone)
+        yield from split_across_midnight(segment,output_timezone)
+
+def job_filter_segments(segments: Iterator[Segment],job: str | None) -> Iterator[Segment]:
+    if job is None:
+        return segments
+    
+    return (s for s in segments if s.job == job)
+
+def date_filter_segments(segments: Iterator[Segment],start_date: date | None, end_date: date | None) -> Iterator[Segment]:
+    if start_date is None and end_date is None:
+        yield from segments
+    
+    for s in segments:
+        dat = s.inTime.date()
+        if (start_date is None or start_date <= dat) and (end_date is None or dat < end_date):
+            yield s
+
+
+def group_segments_by_job_date(segments: Iterator[Segment]) -> Dict[str,Dict[date,List[Segment]]]:
+    groups: Dict[str,Dict[date,List[Segment]]] = defaultdict(lambda: defaultdict(list))
+    
+    for s in segments:
+        groups[s.job][s.inTime.date()].append(s)
+
+    return groups
+
+def group_segments_by_date(segments: Iterator[Segment]) -> Dict[date,List[Segment]]:
+    groups: Dict[date,List[Segment]] = defaultdict(list)
+    
+    for s in segments:
+        groups[s.inTime.date()].append(s)
+
+    return groups
+
+
+
 def main():
     try:
         args = parse_args()
@@ -202,78 +324,15 @@ def main():
     print('start date:', start_date)
     print('end date:', end_date)
 
-    with open(input_path) as clock:
-        txt = clock.read();
+    # exit()
 
-    txtSegments = [seg.strip() for seg in txt.split("==")];
-    # make sure the last one is an empty string.
-    if(txtSegments[-1] != ""):
-        raise Exception("The file does not end with a double equals, are you still clocked in?");
-
-    # Each string in txtSegments should look like this
-    # """
-    # Job
-    # >2025-01-13T12:20:00-06:00
-    # <2025-01-13T15:20:00-06:00
-    # Description
-    # possible multiple line descrption
-    # """
-
-    # Next, parse each segment
-    segments: List[Segment] = list();
-    
-    # go through each time segment
-    for text in txtSegments[1:-1]:
-        lines = text.split("\n");
-        # check that the zeroth begins with >
-        if(lines[1][0] != ">"):
-            raise Exception("not a valid clock in") #TODO Give a line number
-        # check that the first begins with <
-        if(lines[2][0] != "<"):
-            raise Exception("not a valid clock out") #TODO Give a line number
-        
-        job = lines[0]
-
-        # filter by job here.
-        if job_filter is not None and job != job_filter:
-            continue
-
-        description = ';;'.join(lines[3:])
-        # extract time values
-        localInTime = datetime.fromisoformat(lines[1][1:]).astimezone(output_timezone)
-        localOutTime = datetime.fromisoformat(lines[2][1:]).astimezone(output_timezone)
-
-        current_start = localInTime
-        
-        # deal with in-outs that pass on multiple days
-        while localOutTime.date() > current_start.date():
-            # Create a midnight marker at 23:59:59.99 for the current day
-            local_current = current_start
-            end_of_day = local_current.replace(hour=23, minute=59, second=59)
-            
-            segments.append(Segment(job, current_start, end_of_day, description))
-            
-            # Set the start of the next segment to 00:00:00 of the following day
-            next_day = local_current.date() + timedelta(days=1)
-            current_start = datetime.combine(next_day, time.min, tzinfo=output_timezone)
-
-        segments.append(Segment(job, current_start, localOutTime, description))
-
-
-    # group by job and date
-    grouped_segs: Dict[str,Dict[date,List[Segment]]] = defaultdict(lambda: defaultdict(list))
+    check_file_terminator(input_path)
+    # file ends properly, lets read some segments
+    splits = read_segment_lines(input_path)
+    segments = date_filter_segments(job_filter_segments(parse_segments(splits,output_timezone),job_filter),start_date,end_date)
+    grouped_segs = group_segments_by_job_date(segments)
 
     
-    for seg in segments:
-        dat = seg.inTime.date();
-        if (start_date is None or start_date <= dat) and (end_date is None or dat < end_date):
-            # if the date is within the filter range
-            grouped_segs[seg.job][dat].append(seg);
-
-
-    # reduced_segs: Dict[str,Dict[date,timedelta]] = defaultdict(dict);
-    # straight_hours: Dict[str, timedelta] = dict();
-
     with open("summary.txt",'w') as summary, open("timecard.txt",'w') as card:
         # for each job
         for job, date_groups in grouped_segs.items():
