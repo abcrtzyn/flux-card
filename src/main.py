@@ -13,6 +13,8 @@ from zoneinfo import ZoneInfo
 
 from config import AppConfig, JobConfig
 from error import FluxCardInputError
+from output.card import card
+from output.summary import summary
 from period_settings_parser import PeriodSettingsAction
 from segments import Segment
 
@@ -170,14 +172,6 @@ def calulate_period_date_range(period_anchor: date, period_length: int, period_o
 
     return start_date, end_date
 
-
-def format_timedelta(x: timedelta):
-    "Quick function for formatting a timedelta"
-    s = int(x.total_seconds())
-    hr,s = divmod(s,3600)
-    mn,s = divmod(s,60)
-
-    return f"{hr}:{mn:02}:{s:02}"
 
 
 def check_file_terminator(input_path: Path) -> None:
@@ -337,46 +331,11 @@ def main():
     segments = date_filter_segments(job_filter_segments(parse_segments(splits,output_timezone),job_filter),start_date,end_date)
     grouped_segs = group_segments_by_job_date(segments)
 
-    
-    with open("summary.txt",'w') as summary, open("timecard.txt",'w') as card:
-        # for each job
-        for job, date_groups in grouped_segs.items():
-            all_job_deltas = [s.elapsed() for day in date_groups.values() for s in day]
-            total_hours = sum(all_job_deltas, timedelta(0))
-
-            # write job headers
-            summary.write(f'{job:13s}  {format_timedelta(total_hours):>10s}\n')
-            card.write(f'{job}\n')
-            card.write(f'\tIn\tOut\tHours\n')
-            # if OUT:
-            #     print(f'{job:13s}  {format_timedelta(total_hours):>10s}')
-            # else:
-            #     print(f'{job}')
-            # now list out each date and its segments
-            for dat in sorted(date_groups.keys()):
-                segs = date_groups[dat]
-                day_total = sum((s.elapsed() for s in segs), timedelta(0))
-
-                summary.write(f"{dat.strftime('%a, %b %d %Y'):16s}  {str(day_total):>8s}\n");
-                # card.write(f"{dat.strftime('%a, %b %d %Y'):16s}  {day_total.total_seconds()/3600:.2f}\n");
-                card.write(f"{dat.strftime('%a, %b %d %Y'):16s}\n");
-
-                # if OUT: 
-                #     print(f"{dat.strftime('%a, %b %d %Y'):16s}  {str(day_total):>8s}")
-                # else:
-                #     print(f"{dat.strftime('%a, %b %d %Y'):16s}  {day_total.total_seconds()/3600:.2f}")
-                
-                for seg in segs:
-                    summary.write(f"{seg.inTime.strftime('%-I:%M:%S%p%z'):>16s}    {str(seg.elapsed()):>8s}   {seg.description}\n")
-                    # card.write(f"{seg.inTime.astimezone(pytz.timezone(output_timezone)).strftime('%-I %M %p')}     {seg.outTime.astimezone(pytz.timezone(output_timezone)).strftime('%-I %M %p')}\n")
-                    card.write(f"\t{seg.inTime.strftime('%-I:%M %p')}\t{seg.outTime.strftime('%-I:%M %p')}\t{str(seg.elapsed())}\n")
-                    # if OUT:
-                    #     print(f"{seg.inTime.strftime('%-I:%M:%S%p%z'):>16s}   {str(seg.elapsed()):>8s}   {seg.description}")
-                    # else:
-                    #     print(f"{seg.inTime.strftime('%-I %M %p')}     {seg.outTime.strftime('%-I %M %p')}")
-            
-            card.write(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-            card.write(f"Total\t\t\t{format_timedelta(total_hours)}\n\n\n")
+    for job, data in grouped_segs.items():
+        with open(f"summary_{job}.txt",'w') as summary_file:
+            summary(summary_file,data)
+        with open(f"timecard_{job}.txt",'w') as card_file:
+            card(card_file,data)
 
 
 if __name__ == "__main__":
