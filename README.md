@@ -20,20 +20,20 @@ Lots of setup steps here, please follow them carefully.
 
 1. Create the Clock file in the location of your choice, it must be accessible by all devices you want to clock in and out with.
 2. Start the file off by putting `==` in the top line and make sure there is no newline after it (plenty of code editors will add a newline automatically, make sure this doesn't happen)
-3. On the devices which you are going to use them, import the shortcuts Clock In and Clock Out. See the README in the shortcuts folder for more information
+3. On the devices which you plan to clock in and out, import the shortcuts Clock In and Clock Out. See the README in the shortcuts folder for more information
     - Do this by opening them as files, not dragging them into the shortcuts app
     - Answer the import questions:
         - (Clock in) What jobs are you using this for (for tagging purposes)
         - Where is the Clock file located
         - (Clock out) Do you want to add descriptions
 4. Setup the python environment (optional)
-    - the environment allows the use of `fluxcard` or `flux` as a shell command as a replacement for `python3 src/main.py` and that is about it.
+    - the environment allows the use of shell commands `fluxcard` or `flux` as a replacement for `python3 src/main.py` and that is about it.
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
 ```
-5. Open config.toml and set your default parameters here, such as the location of the Clock file with respect to the repo root and output timezone. See [config file options](#options)
+5. Create `config.toml` and set your default parameters here, such as the location of the Clock file with respect to the repo root or an absolute path and output timezone. Use [`config_example.toml`](config_example.toml) as an example. See [config file options](#options)
 6. Run the program using one of the following
 ```sh
 fluxcard # if you have set up the python environment
