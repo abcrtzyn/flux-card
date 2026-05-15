@@ -1,6 +1,6 @@
-timecard_path = "Clock.txt"
+timecard_path = "Clock_example.txt"
 output_timezone = "US/Central"
 
-[jobs.yourjob]
+[jobs.WebDev]
 period_anchor = 2026-05-10
 period_length = 14
