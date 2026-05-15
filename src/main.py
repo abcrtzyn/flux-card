@@ -98,17 +98,13 @@ def get_input_path(args: ParsedArgs, config: AppConfig):
         raise FluxCardInputError(f"Do not have permission to read file: {input_path}")
     return input_path
 
-def get_output_timezone(args: ParsedArgs, config: AppConfig):
+def get_output_timezone(args: ParsedArgs, config: AppConfig) -> ZoneInfo:
     if args.output_timezone is not None:
         return args.output_timezone
     if config.output_timezone is not None:
         return config.output_timezone
     
-    output_timezone = datetime.now().astimezone().tzinfo
-    if output_timezone is None:
-        raise FluxCardInputError('no output timezone specified in cli or config, tried to use system timezone but found none\nplease specify a timezone in the cli or config file')
-    print(f'warning, no output timezone specified in cli or config, using {output_timezone}',file=sys.stderr)
-    return output_timezone
+    raise FluxCardInputError('no output timezone specified in cli or config, please specify a timezone')
 
 def get_job_filter(args: ParsedArgs, config: AppConfig):
     if args.job_filter is not None:

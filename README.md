@@ -49,7 +49,7 @@ This section goes through details of all parameters that can be set on the comma
 | Option | CLI Flag | Config Key | Default / Fallback **date** mode | Default / Fallback **period** mode |
 | :--- | :--- | :--- | :--- | :--- |
 | **Input File** | `-i [path]` | `input_file` | *Error (Required)* | *Error (Required)* |
-| **Timezone** | `-tz [zone]` | `output_timezone` | *System Local* | *System Local* |
+| **Timezone** | `-tz [zone]` | `output_timezone` | *Error (Required)* | *Error (Required)* |
 | **Alt Config** | `-c [path]` | *N/A* | *\<repo root\>/config.toml* | *\<repo root\>/config.toml* |
 | **Job** | `-j [name]` | `default_job` | *No filter applied* | *Error (Required)* |
 | **Start Date** | `[param 1]` | *N/A* | *No minimum filter applied* ||
@@ -68,7 +68,7 @@ The Clock file to input data from. This parameter is required.
 
 #### Output Timezone
 
-Timezone to convert all clock times to. Accepts standard IANA identifiers (like `America/Chicago`), but any value accepted by Python `ZoneInfo` is allowed. The program will attempt to use your system timezone if none is specified. Specifying a timezone will help handle daylight savings time.
+Timezone to convert all clock times to. Accepts standard IANA identifiers (like `America/Chicago`). The timezone allows the program to figue out daylight savings or calculating hours across timezones.
 
 - **CLI**: `-tz [zone]` or `--timezone [zone]`
 - **Config**: `output_timezone`
