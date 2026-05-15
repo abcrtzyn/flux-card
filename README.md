@@ -57,7 +57,7 @@ This section goes through details of all parameters that can be set on the comma
 | **Period Mode** | `-p [index]` | *N/A* |||
 | **Period Anchor**| `--period-settings [anchor] [length]` | `[jobs.name] period_anchor` || *Error (Required)* |
 | **Period Length**| `--period-settings [anchor] [length]` | `[jobs.name] period_length` || *Error (Required)* |
-
+| **Print Config** | `--print-config` | *N/A* |||
 
 #### Timecard File
 
@@ -112,6 +112,12 @@ The length of a pay period measured in days. Used in period mode. Is set per job
 
 - **CLI**: `--period-settings [anchor] [length]`
 - **Config**: `[jobs.name] period_length`
+
+#### Print Config
+
+Simple option that does all the config resolution, from config file and command line arguments, prints the settings and exits. No input, processing, or output is done. Could be useful to see what configuration you are running at the moment, which input file, what timezone, etc.
+
+Note that period settings are resolved into filter start and end date.
 
 
 ## Program documentation

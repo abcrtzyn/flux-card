@@ -28,6 +28,7 @@ class ParsedArgs:
     end_date: date | None
     period: int | None
     period_settings: Tuple[date, int] | None
+    print_config: bool
 
 def parse_args() -> ParsedArgs:
     parser = argparse.ArgumentParser(prog="fluxcard",description="Summarize clock in sessions from the input file.\nUses settings from command line and config.toml")
@@ -44,6 +45,8 @@ def parse_args() -> ParsedArgs:
     parser.add_argument("-p", "--period", type=int, help="Period index (0=current, 1=previous, etc.), replaces date filtering mode")
     parser.add_argument("--period-settings",nargs=2,action=PeriodSettingsAction, metavar=("ANCHOR_DATE","LENGTH"), help="anchor point date (YYYY-MM-DD) and period length in days used in period mode")
 
+    parser.add_argument("--print-config",action="store_true", help="Print resolved configuration and exit")
+
     raw_args = parser.parse_args()
 
     return ParsedArgs(
@@ -55,6 +58,7 @@ def parse_args() -> ParsedArgs:
         end_date=raw_args.end_date,
         period=raw_args.period,
         period_settings=raw_args.period_settings,
+        print_config=raw_args.print_config,
     )
 
 
@@ -317,14 +321,15 @@ def main():
     except SystemExit:
         raise
 
-    print('using the following settings')
-    print('input file:', input_path)
-    print('output timezone:', output_timezone)
-    print('job:', job_filter)
-    print('start date:', start_date)
-    print('end date:', end_date)
-
-    # exit()
+    if args.print_config:
+        print('using the following settings')
+        print('input file:', input_path)
+        print('output timezone:', output_timezone)
+        print('job:', job_filter)
+        print('start date:', start_date)
+        print('end date:', end_date)
+    
+        exit(0)
 
     check_file_terminator(input_path)
     # file ends properly, lets read some segments
