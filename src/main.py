@@ -307,8 +307,9 @@ def main():
         job_config = config.job_config(job_filter)
         start_date, end_date = get_date_filters(args, job_filter, job_config)
     except FluxCardInputError as e:
-        print(e, file=sys.stderr)
-        sys.exit(1)
+        raise e
+        # print(e, file=sys.stderr)
+        # exit(1)
     except Exception as e:
         e.add_note('this should probably be added as a FluxCardInputError')
         raise e
