@@ -51,13 +51,15 @@ This section goes through details of all parameters that can be set on the comma
 | **Input File** | `-i [path]` | `input_file` | *Error (Required)* | *Error (Required)* |
 | **Timezone** | `-tz [zone]` | `output_timezone` | *Error (Required)* | *Error (Required)* |
 | **Alt Config** | `-c [path]` | *N/A* | *\<repo root\>/config.toml* | *\<repo root\>/config.toml* |
-| **Job** | `-j [name]` | `default_job` | *No filter applied* | *Error (Required)* |
+| **Job** | `-j [name]` | `job_filter` in macro and `default_job` | *No filter applied* | *Error (Required)* |
 | **Start Date** | `[param 1]` | *N/A* | *No minimum filter applied* ||
 | **End Date** | `[param 2]` | *N/A* | *No maximum filter* ||
-| **Period Mode** | `-p [index]` | *N/A* |||
-| **Period Anchor**| `--period-settings [anchor] [length]` | `[jobs.name] period_anchor` || *Error (Required)* |
-| **Period Length**| `--period-settings [anchor] [length]` | `[jobs.name] period_length` || *Error (Required)* |
+| **Period Mode** | `-p [index]` | `period` in macro |||
+| **Period Anchor**| `--period-settings [anchor] [length]` | `period_anchor` in job || *Error (Required)* |
+| **Period Length**| `--period-settings [anchor] [length]` | `period_length` in job || *Error (Required)* |
+| **Macro**| `-m [macro]` | *N/A* |||
 | **Print Config** | `--print-config` | *N/A* |||
+
 
 #### Timecard File
 
@@ -81,10 +83,11 @@ Alternate config file path. If you would like to have multiple configurations, t
 
 #### Job
 
-Job to filter all clock in sessions. Must be the exact same as what is on the top line of each section. Required by period mode. `default_job` in config is an easy way to shorten up your command when you only have one job you are calculating for. CLI args always override config options. To set no filter on the command line overriding `default_job` config option, use `-j _` as the command line option.
+Job to filter all clock in sessions. Must be the exact same as what is on the top line of each section. Required by period mode. If you have only one job you are calculating for, you can set the `default_job` that way it will always be set. You can also set job filters in macros using `job_filter`. On the commind line, if you want to override config job filters, use `-j _` as the command line option.
 
 - **CLI**: `-j [name]` or `--job [name]`
 - **Config**: `default_job`
+- **Macros**: `job_filter` [(see macro section)](#macros)
 
 #### Date Range
 
@@ -94,9 +97,10 @@ Only available on the CLI, filters the clocked in segments within the range spec
 
 #### Period Mode
 
-Filters based on a period pay schedule, with the options period anchor and period length set, you can enter a period offset relative to today and it will filter in that range. The period offset works as follows. Use 0 for the *current* period (the pay period that today is a part of), use 1 for the *previous* pay period, or any other integer for whatever you are looking for. This mode will use the anchor and period length to figue out when the period starts and ends and filter based on those dates.
+Filters based on a period pay schedule, with the options period anchor and period length set, you can enter a period offset relative to today and it will filter in that range. The period offset works as follows. Use 0 for the *current* period (the pay period that today is a part of), use 1 for the *previous* pay period, or any other integer for whatever you are looking for. This mode will use the anchor and period length to figue out when the period starts and ends and filter based on those dates. You can set a period filter in a macro using `period` key.
 
 - **CLI**: `-p [index]` or `--period [index]`
+- **Macros**: `period` [(see macro section)](#macros)
 
 
 #### Period Anchor
@@ -118,6 +122,14 @@ The length of a pay period measured in days. Used in period mode. Is set per job
 Simple option that does all the config resolution, from config file and command line arguments, prints the settings and exits. No input, processing, or output is done. Could be useful to see what configuration you are running at the moment, which input file, what timezone, etc.
 
 Note that period settings are resolved into filter start and end date.
+
+- **CLI**: `--print-config`
+
+## Macros
+
+Macros allow short commands to run commonly used functions. Macros can be defined in a config file to do job filter, period mode, and multiple outputs at once to files and out to the terminal. Macros are only defined in config files, you can not choose one to run in the config file.
+
+- **CLI**: `-m [macro]` or `--macro [macro]`
 
 
 ## Program documentation
