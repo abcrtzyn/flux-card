@@ -51,7 +51,7 @@ This section goes through details of all parameters that can be set on the comma
 | **Input File** | `-i [path]` | `input_file` | *Error (Required)* | *Error (Required)* |
 | **Timezone** | `-tz [zone]` | `output_timezone` | *Error (Required)* | *Error (Required)* |
 | **Alt Config** | `-c [path]` | *N/A* | *\<repo root\>/config.toml* | *\<repo root\>/config.toml* |
-| **Job** | `-j [name]` | `job_filter` in macro and `default_job` | *No filter applied* | *Error (Required)* |
+| **Job** | `-j [names]` | `job_filter` in macro and `default_job` | *No filter applied* | *Error (Required)* |
 | **Start Date** | `[param 1]` | *N/A* | *No minimum filter applied* ||
 | **End Date** | `[param 2]` | *N/A* | *No maximum filter* ||
 | **Period Mode** | `-p [index]` | `period` in macro |||
@@ -84,9 +84,9 @@ Alternate config file path. If you would like to have multiple configurations, t
 
 #### Job
 
-Job to filter all clock in sessions. Must be the exact same as what is on the top line of each section. Required by period mode. If you have only one job you are calculating for, you can set the `default_job` that way it will always be set. You can also set job filters in macros using `job_filter`. On the commind line, if you want to override config job filters, use `-j _` as the command line option.
+Job to filter all clock in sessions. Must be the exact same as what is on the top line of each section and must not be `_`. If you have only one job you are calculating for, you can set the `default_job` that way it will always be set. On the command line, all of `-j name`, `-j name1,name2` or `-j "name1, name2"` are valid. In macros, `job_filter` can be a string (single job) or a list of strings. If you want to overide the config setting on the command line back to no filter, use `-j _`. Period mode requires that the job filter only have one job.
 
-- **CLI**: `-j [name]` or `--job [name]`
+- **CLI**: `-j [names]` or `--job [names]`
 - **Config**: `default_job`
 - **Macros**: `job_filter` [(see macro section)](#macros)
 

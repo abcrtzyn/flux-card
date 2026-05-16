@@ -10,7 +10,7 @@ from io import TextIOWrapper
 from pathlib import Path
 import sys
 import tomllib
-from typing import Any, Dict, Generator, List, cast
+from typing import Any, Dict, Generator, List, Set, cast
 from zoneinfo import ZoneInfo
 
 from error import FluxCardInputError
@@ -106,7 +106,7 @@ class FileConfig(OutputConfig):
 
 @dataclass(frozen=True)
 class MacroConfig:
-    job_filter: str | None #= field(default=None)
+    job_filter: Set[str] | None #= field(default=None)
     period: int | None #= field(default=None)
     outputs: List[OutputConfig] #= cast(List[OutputConfig],field(default_factory=list))
 
@@ -114,9 +114,19 @@ class MacroConfig:
     def from_dict(cls, raw: Dict[str,Any], config_path: Path) -> "MacroConfig":
         
 
-        job_filter = raw.get('job_filter')
-        if job_filter is not None and not isinstance(job_filter,str):
-            raise FluxCardInputError(f"job filter must be a string. Got '{job_filter}'")
+        job_filter_raw = raw.get('job_filter')
+        if job_filter_raw is None:
+            job_filter = None
+        elif isinstance(job_filter_raw,str):
+            job_filter = {job_filter_raw}
+        elif isinstance(job_filter_raw,list):
+            job_filter = set(cast(List[str],job_filter_raw))
+        else:
+            raise FluxCardInputError(f"job filter must be a string or list of strings. Got '{job_filter_raw}'")
+
+        # check for _ job which is not allowed.
+        if job_filter is not None and '_' in job_filter:
+            raise FluxCardInputError("job _ not allowed")
 
         period = raw.get('period')
         if period is not None and not isinstance(period,int):

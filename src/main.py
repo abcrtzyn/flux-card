@@ -8,14 +8,14 @@ from math import floor
 import os
 from pathlib import Path
 import sys
-from typing import Iterator, List, Dict, Tuple
+from typing import Iterator, List, Dict, Set, Tuple
 from zoneinfo import ZoneInfo
 
-from config import AppConfig, JobConfig, MacroConfig, OutputConfig
+from config import AppConfig, MacroConfig, OutputConfig
 from error import FluxCardInputError
 from output.card import card
 from output.summary import summary
-from settings_parsers import OutputSettingsAction, PeriodSettingsAction
+from settings_parsers import JobFilterAction, OutputSettingsAction, PeriodSettingsAction
 from segments import Segment
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -25,7 +25,7 @@ class ParsedArgs:
     timecard_path: Path | None
     output_timezone: ZoneInfo | None
     alt_config: Path | None
-    job_filter: str | None
+    job_filter: Set[str] | None
     start_date: date | None
     end_date: date | None
     period: int | None
@@ -40,7 +40,7 @@ def parse_args() -> ParsedArgs:
     parser.add_argument("-i", "--input", dest="timecard_path", type=lambda x: Path(x) if x else None, help="Path to input file")
     parser.add_argument("-tz", "--timezone", dest="output_timezone", type=ZoneInfo, help="timezone to format output")
     parser.add_argument("-c","--config",dest="alt_config", type=lambda x: Path(x) if x else None, help="Alternate config file path")
-    parser.add_argument("-j","--job",dest="job_filter",help="Job to filter by, required in period mode")
+    parser.add_argument("-j","--job",dest="job_filter",action=JobFilterAction,help='Job(s) to filter by seperated by comma "WebDev,Gardening". Clear filter set by config with "_". One job is required in period mode')
 
 
     parser.add_argument("start_date", nargs="?", type=parse_cli_start_date, help="Optinal start date, can use _ as a placeholder (YYYY-MM-DD)")
@@ -129,21 +129,24 @@ def get_macro_config(args: ParsedArgs, config: AppConfig) -> MacroConfig | None:
     
 
 
-def get_job_filter(args: ParsedArgs, macro_config: MacroConfig | None, config: AppConfig):
+def get_job_filter(args: ParsedArgs, macro_config: MacroConfig | None, config: AppConfig) -> Set[str] | None:
+    # for all places, None means not set, empty set means explicit no filter, any other set is a filter
+    # the return value of this function is any set filter or None for no filter
+
     if args.job_filter is not None:
-        if args.job_filter == '_':
+        if len(args.job_filter) == 0:
             return None
         return args.job_filter
     
     if macro_config is not None:
         return macro_config.job_filter
 
-    return config.default_job
+    if config.default_job is not None:
+        return {config.default_job}
 
 
-def get_period_settings(args: ParsedArgs, job_filter: str | None, job_config: JobConfig):
-    if job_filter is None:
-        raise FluxCardInputError('period mode requires a job filter set by -j [job] or in the config as default_job')
+def get_period_settings(args: ParsedArgs, job_filter: str, config: AppConfig):
+    job_config = config.job_config(job_filter)
 
     if args.period_settings is not None:
         return args.period_settings
@@ -167,7 +170,7 @@ def get_period_parameter(args: ParsedArgs, macro_config: MacroConfig | None) -> 
     return None
     
 
-def get_date_filters(args: ParsedArgs, macro_config: MacroConfig | None, job_filter: str | None, job_config: JobConfig):
+def get_date_filters(args: ParsedArgs, macro_config: MacroConfig | None, job_filter: Set[str] | None, config: AppConfig):
     period = get_period_parameter(args,macro_config)
     if period is not None and (args.start_date or args.end_date):
         # if a period is specified and dates are specified, disallow it
@@ -175,8 +178,13 @@ def get_date_filters(args: ParsedArgs, macro_config: MacroConfig | None, job_fil
 
     
     if period is not None:
+        # only allow one job in the filter here
+        if job_filter is None or len(job_filter) > 1:
+            raise FluxCardInputError('in period mode, only one job filter is allowed. If you only have one job, use the default_job config option to set the filter')
+        job_filter_single = job_filter.pop()
+
         # grab the period settings from job config or command line
-        period_anchor, period_length = get_period_settings(args, job_filter, job_config)
+        period_anchor, period_length = get_period_settings(args, job_filter_single,config)
             
         # then come up with the start and end date
         start_date, end_date = calulate_period_date_range(period_anchor, period_length, period)
@@ -305,11 +313,11 @@ def parse_segments(segments: Iterator[Tuple[Tuple[Path,int],List[str]]],output_t
         segment = parse_timecard_segment(lines,loc_info,output_timezone)
         yield from split_across_midnight(segment,output_timezone)
 
-def job_filter_segments(segments: Iterator[Segment],job: str | None) -> Iterator[Segment]:
+def job_filter_segments(segments: Iterator[Segment],job: Set[str] | None) -> Iterator[Segment]:
     if job is None:
         return segments
     
-    return (s for s in segments if s.job == job)
+    return (s for s in segments if s.job in job)
 
 def date_filter_segments(segments: Iterator[Segment],start_date: date | None, end_date: date | None) -> Iterator[Segment]:
     if start_date is None and end_date is None:
@@ -347,8 +355,7 @@ def main():
         output_timezone = get_output_timezone(args, config)
         macro_config = get_macro_config(args,config)
         job_filter = get_job_filter(args, macro_config, config)
-        job_config = config.job_config(job_filter)
-        start_date, end_date = get_date_filters(args, macro_config, job_filter, job_config)
+        start_date, end_date = get_date_filters(args, macro_config, job_filter, config)
         outputs = get_outputs(args, macro_config)
     except FluxCardInputError as e:
         raise e
