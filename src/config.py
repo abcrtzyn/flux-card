@@ -49,7 +49,6 @@ class JobConfig:
 class OutputConfig(ABC):
     # path to a file or stdout if none
     output_format: str
-    is_stdout: bool
     
     @abstractmethod
     @contextmanager
@@ -82,7 +81,6 @@ class OutputConfig(ABC):
 
 @dataclass(frozen=True)
 class StdoutConfig(OutputConfig):
-    is_stdout: bool = field(default=True,init=False,repr=False)
 
     @contextmanager
     def open_stream(self) -> Generator[TextIOWrapper,None,None]:
@@ -94,7 +92,6 @@ class StdoutConfig(OutputConfig):
 @dataclass(frozen=True)
 class FileConfig(OutputConfig):
     file_path: Path
-    is_stdout: bool = field(default=False,init=False,repr=False)
 
     @contextmanager
     def open_stream(self) -> Generator[TextIOWrapper,None,None]:
