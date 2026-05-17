@@ -15,7 +15,7 @@ from config import AppConfig, MacroConfig, OutputConfig
 from error import FluxCardInputError
 from output.card import card
 from output.summary import summary
-from settings_parsers import JobFilterAction, OutputSettingsAction, PeriodSettingsAction
+from settings_parsers import JobFilterAction, OutputSettingsAction
 from segments import Segment
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -29,7 +29,6 @@ class ParsedArgs:
     start_date: date | None
     end_date: date | None
     period: int | None
-    period_settings: Tuple[date, int] | None
     output: OutputConfig | None
     macro: str | None
     print_config: bool
@@ -47,7 +46,6 @@ def parse_args() -> ParsedArgs:
     parser.add_argument("end_date", nargs="?", type=date.fromisoformat, help="Optinal end date, not including the day itself (YYYY-MM-DD)")
 
     parser.add_argument("-p", "--period", type=int, help="Period index (0=current, 1=previous, etc.), replaces date filtering mode")
-    parser.add_argument("--period-settings",nargs=2,action=PeriodSettingsAction, metavar=("ANCHOR_DATE","LENGTH"), help="anchor point date (YYYY-MM-DD) and period length in days used in period mode")
     parser.add_argument("-o", "--output",nargs=2,action=OutputSettingsAction, metavar=("DESTINATION","FORMAT"), help="where and what to output. Destination can be 'stdout' or a file path (absolute or cwd relative), format can be any string that is has an output function.")
 
     parser.add_argument('-m', "--macro", type=str, help="Macro to run, macros can be set in the config file to run commands with job filters and multiple output formats")
@@ -63,7 +61,6 @@ def parse_args() -> ParsedArgs:
         start_date=raw_args.start_date,
         end_date=raw_args.end_date,
         period=raw_args.period,
-        period_settings=raw_args.period_settings,
         output=raw_args.output,
         macro=raw_args.macro,
         print_config=raw_args.print_config,
@@ -145,14 +142,11 @@ def get_job_filter(args: ParsedArgs, macro_config: MacroConfig | None, config: A
         return {config.default_job}
 
 
-def get_period_settings(args: ParsedArgs, job_filter: str, config: AppConfig):
+def get_period_settings(job_filter: str, config: AppConfig):
     job_config = config.job_config(job_filter)
 
-    if args.period_settings is not None:
-        return args.period_settings
-    
     if job_config.period_anchor is None and job_config.period_length is None:
-        raise FluxCardInputError(f'period settings not given, please specify with --period-settings cli option or [jobs.{job_filter}] period_anchor and period_length config settings')
+        raise FluxCardInputError(f'period settings not given, please specify with [jobs.{job_filter}] period_anchor and period_length config settings')
     if job_config.period_anchor is None:
         raise FluxCardInputError(f'anchor missing from [jobs.{job_filter}] section in config')
     if job_config.period_length is None:
@@ -184,7 +178,7 @@ def get_date_filters(args: ParsedArgs, macro_config: MacroConfig | None, job_fil
         job_filter_single = job_filter.pop()
 
         # grab the period settings from job config or command line
-        period_anchor, period_length = get_period_settings(args, job_filter_single,config)
+        period_anchor, period_length = get_period_settings(job_filter_single,config)
             
         # then come up with the start and end date
         start_date, end_date = calulate_period_date_range(period_anchor, period_length, period)

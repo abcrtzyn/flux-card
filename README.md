@@ -55,8 +55,8 @@ This section goes through details of all parameters that can be set on the comma
 | **Start Date** | `[param 1]` | *N/A* | *No minimum filter applied* ||
 | **End Date** | `[param 2]` | *N/A* | *No maximum filter* ||
 | **Period Mode** | `-p [index]` | `period` in macro |||
-| **Period Anchor**| `--period-settings [anchor] [length]` | `period_anchor` in job || *Error (Required)* |
-| **Period Length**| `--period-settings [anchor] [length]` | `period_length` in job || *Error (Required)* |
+| **Period Anchor**| *N/A* | `period_anchor` in job || *Error (Required)* |
+| **Period Length**| *N/A* | `period_length` in job || *Error (Required)* |
 | **Output** | `-o [dest] [format]` | `outputs` in macro | *Required (no error, no output)* | *Required (no error, no output)*| 
 | **Macro** | `-m [macro]` | *N/A* |||
 | **Print Config** | `--print-config` | *N/A* |||
@@ -108,14 +108,12 @@ Filters based on a period pay schedule, with the options period anchor and perio
 
 The anchor point for period mode, the first day in of a pay period. Can be set to any date past or future. Is set per job in config.
 
-- **CLI**: `--period-settings [anchor] [length]`
 - **Config**: `[jobs.name] period_anchor`
 
 #### Period Length
 
 The length of a pay period measured in days. Used in period mode. Is set per job in config.
 
-- **CLI**: `--period-settings [anchor] [length]`
 - **Config**: `[jobs.name] period_length`
 
 #### Print Config
