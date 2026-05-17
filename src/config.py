@@ -155,6 +155,10 @@ class AppConfig:
         output_timezone_str = cast(str|None,raw.get("output_timezone"))
         output_timezone = ZoneInfo(output_timezone_str) if output_timezone_str else None
 
+        default_job = raw.get("default_job")
+        if default_job is not None and not isinstance(default_job,str):
+            raise FluxCardInputError(f"default job must be a string, but got '{default_job}'")
+
         jobs: Dict[str,JobConfig] = {}
         for name, value in raw.get("jobs", {}).items():
             try:
@@ -174,7 +178,7 @@ class AppConfig:
         return cls(
             timecard_path=timecard_path,
             output_timezone = output_timezone,
-            default_job=raw.get("default_job"),
+            default_job=default_job,
             jobs=jobs,
             macros=macros
         )
