@@ -11,10 +11,13 @@ from zoneinfo import ZoneInfo
 
 from config import AppConfig, MacroConfig, OutputConfig
 from error import FluxCardInputError
-from output.card import card
-from output.summary import summary
+from output_registry import print_formatters
 from settings_parsers import JobFilterAction, OutputSettingsAction
 from segments import Segment
+
+# this loads all the output formats into the registry
+import outputs  # pyright: ignore[reportUnusedImport]
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -30,6 +33,7 @@ class ParsedArgs:
     output: OutputConfig | None
     macro: str | None
     print_config: bool
+    list_formats: bool
 
 def parse_args() -> ParsedArgs:
     parser = argparse.ArgumentParser(prog="fluxcard",description="Summarize clock in sessions from the input file.\nUses settings from command line and config.toml")
@@ -48,6 +52,7 @@ def parse_args() -> ParsedArgs:
 
     parser.add_argument('-m', "--macro", type=str, help="Macro to run, macros can be set in the config file to run commands with job filters and multiple output formats")
     parser.add_argument("--print-config",action="store_true", help="Print resolved configuration and exit")
+    parser.add_argument("--list-formats",action="store_true", help="Print the list of formatter functions and exit")
 
     raw_args = parser.parse_args()
 
@@ -62,6 +67,7 @@ def parse_args() -> ParsedArgs:
         output=raw_args.output,
         macro=raw_args.macro,
         print_config=raw_args.print_config,
+        list_formats=raw_args.list_formats,
     )
 
 
@@ -319,10 +325,14 @@ def group_segments_by_date(segments: Iterator[Segment]) -> Dict[date,List[Segmen
     return groups
 
 
-
 def main():
     try:
         args = parse_args()
+
+        if args.list_formats:
+            print_formatters()
+            exit()
+
         config = get_config(args)
         input_path = get_input_path(args, config)
         output_timezone = get_output_timezone(args, config)
@@ -349,7 +359,8 @@ def main():
         print('end date:', end_date)
         print('outputs:')
         for o in outputs:
-            print(' ',o.output_format,'at',o.output_str())
+            kwargs_str = f" with {o.kwargs}" if o.kwargs else ""
+            print(f"  {o.format_key} at {o.output_str()}{kwargs_str}")
             
         exit(0)
 
@@ -359,12 +370,8 @@ def main():
     segments = date_filter_segments(job_filter_segments(parse_segments(splits,output_timezone),job_filter),start_date,end_date)
     data = group_segments_by_date(segments)
 
-    for o in outputs:
-        with o.open_stream() as stream:
-            if o.output_format == 'card':
-                card(stream,data)
-            elif o.output_format == 'summary':
-                summary(stream,data)
+    for o in outputs:    
+        o.execute_output(data)
 
 
 if __name__ == "__main__":

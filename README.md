@@ -54,6 +54,7 @@ This section goes through details of all parameters that can be set on the comma
 | **Start Date**    | `[param 1]`      |                   | No minimum filter applied   |
 | **End Date**      | `[param 2]`      |                   | No maximum filter applied   |
 | **Print Config**  | `--print-config` |                   | Program runs in full        |
+| **List Formats**  | `--list-formats` |                   | Program runs                |
 | **Macro**         | `-m [macro]`     |                   | No macro used               |
 | **Input File**    | `-i [path]`      | `input_file`      | *Required (Error)*          |
 | **Timezone**      | `-tz [zone]`     | `output_timezone` | *Required (Error)*          |
@@ -75,6 +76,12 @@ Filters the clocked in segments within the range specified. These are positional
 This option is like a dry run. It will figure out all the settings used, such as schedules for period mode, and print out the settings the program would use if you did not include this option. This is a way to check what input file the program wants to use, the output timezone, and the job and date filters before running the program.
 
 - **CLI**: `--print-config`
+
+#### List Formats
+
+This option prints the available output formats and the top line of their docstring and then exits.
+
+- **CLI**: `list-formats`
 
 #### Macros
 

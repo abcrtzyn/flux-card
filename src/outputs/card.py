@@ -2,6 +2,7 @@ from datetime import date, timedelta
 from io import TextIOWrapper
 from typing import Dict, List
 
+from output_registry import register_formatter
 from segments import Segment
 
 def format_timedelta(x: timedelta):
@@ -13,8 +14,8 @@ def format_timedelta(x: timedelta):
     return f"{hr}:{mn:02}:{s:02}"
 
 
-
-def card(file: TextIOWrapper, data: Dict[date,List[Segment]]):
+@register_formatter("card")
+def output_card(file: TextIOWrapper, data: Dict[date,List[Segment]], argument: str | None = None):
     """My format for pasting into a formatted Apple pages document, sort of a tsv"""
 
     all_job_deltas = [s.elapsed() for day in data.values() for s in day]

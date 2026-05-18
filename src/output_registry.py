@@ -1,0 +1,37 @@
+import io
+from datetime import date
+from typing import Callable, Concatenate, Dict, List, TypeVar
+from segments import Segment
+
+FormatterProtocol = Callable[Concatenate[io.TextIOWrapper,Dict[date, List[Segment]],...],None]
+
+
+_OUTPUT_REGISTRY: Dict[str, FormatterProtocol] = {}
+
+F = TypeVar('F', bound=FormatterProtocol)
+
+def register_formatter(name: str) -> Callable[[F], F]:
+    """Decorator to register an output format layout style."""
+
+    def decorator(func: F) -> F:
+        _OUTPUT_REGISTRY[name] = func
+        return func
+    
+    return decorator
+
+
+def get_formatter(name: str) -> FormatterProtocol:
+    """Get the formatter specified by the string or raise an error with the valid formatters"""
+    if name not in _OUTPUT_REGISTRY:
+        available = ", ".join(sorted(_OUTPUT_REGISTRY.keys()))
+        raise KeyError(f'unknown output format "{name}".\nAvailable formats are {available}\nSee list with more details using option --list-formats')
+
+    return _OUTPUT_REGISTRY[name]
+
+def print_formatters() -> None:
+    print("Available Fluxcard Output Formats:")
+    print("=" * 40)
+    for name, func in _OUTPUT_REGISTRY.items():
+        # Prints format name and the first line of its python docstring
+        doc = func.__doc__.split('\n')[0] if func.__doc__ else "No description available."
+        print(f"  {name:<12} ── {doc}")

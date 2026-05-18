@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+import inspect
 from io import TextIOWrapper
 from math import floor
 from pathlib import Path
@@ -15,6 +16,8 @@ from typing import Any, Dict, Generator, Iterable, List, Sequence, Set, Tuple, c
 from zoneinfo import ZoneInfo
 
 from error import FluxCardInputError
+from output_registry import FormatterProtocol, get_formatter
+from segments import Segment
 
 
 T = TypeVar('T')
@@ -201,9 +204,17 @@ class JobConfig:
 
 @dataclass(frozen=True)
 class OutputConfig(ABC):
-    # path to a file or stdout if none
-    output_format: str
+    format_key: str 
+    format_function: FormatterProtocol
+    kwargs: Dict[str,Any]
     
+    def execute_output(self, data: Dict[date, List[Segment]]) -> None:
+        """Runs the output formatter function"""
+
+        with self.open_stream() as stream:
+            self.format_function(stream,data,self.kwargs)
+
+
     @abstractmethod
     @contextmanager
     def open_stream(self) -> Generator[TextIOWrapper,None,None]: ...
@@ -214,23 +225,37 @@ class OutputConfig(ABC):
     @classmethod
     def from_dict(cls, raw: Dict[str,Any], config_path: Path) -> "OutputConfig":
         # output is required, otherwise, how would we know how to output?
-        form = raw.get("format")
+        form = raw.pop("format")
         if not isinstance(form,str):
             raise FluxCardInputError(f"format must be a string. Got '{form}'")
         
-        dest = raw.get("dest")
+        dest = raw.pop("dest")
 
-        return OutputConfig.from_args(dest,form,config_path)
+        # give these argument versions for actual parsing, along with the rest of the arguments as is.
+        return OutputConfig.from_args(dest,form,config_path,raw)
 
     @classmethod
-    def from_args(cls, dest: str | None, form: str, config_path: Path) -> "OutputConfig":
+    def from_args(cls, dest: str | None, form: str, config_path: Path, extra_kwargs: Dict[str,Any]) -> "OutputConfig":
+        # get the formatter
+        formatter = get_formatter(form)
+
+        # check the signiture
+        sig = inspect.signature(formatter)
+        # if the signiture has **kwargs in it, we don't check keys.
+        if not any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values()):
+            # check the given kwargs for invalid keys (keys not supported by the formatter)
+            invalid_keys = set(extra_kwargs.keys()) - set(sig.parameters.keys())
+            if invalid_keys:
+                raise FluxCardInputError(f'Format "{form}" received unsupported options: {', '.join(invalid_keys)}')
+        # we have passed the key check here
+
         # destination can be None or stdout for stdout
         if dest is None or dest == "stdout":
-            return StdoutConfig(output_format=form)
+            return StdoutConfig(form,formatter,extra_kwargs)
 
         dest_file_path = resolve_config_relative_path(dest, config_path)
         
-        return FileConfig(form,dest_file_path)
+        return FileConfig(form,formatter,extra_kwargs,dest_file_path)
 
 
 @dataclass(frozen=True)
