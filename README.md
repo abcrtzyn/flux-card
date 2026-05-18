@@ -179,6 +179,52 @@ Next you have to assign this schedule to a job like this. A schedule can be assi
 schedule = "example"
 ```
 
+### Schedules
+
+There are multiple schedules available, this section details each one and its purpose.
+
+#### Days Cycle
+
+Days cycle is the first schedule made. It accounts for any period cycle that is an exact number of days. The most common being weekly and bi-weekly. The parameters are `period_anchor` which is the date of the first day of a period cycle, and `period_length` which is the length of the period in days.
+
+```toml
+[schedules.example]
+type = "days_cycle"
+period_anchor = 2026-05-10 # in YYYY-MM-DD
+period_length = 14 # an integer
+```
+
+#### Monthly Cycle
+
+Monthly cycle handles cases where the period cycle begins on the nth day of each month. The parameter is `start_day` which can be an integer between 1 and 28 inclusive.
+
+```toml
+[schedules.example]
+type = "monthly"
+start_day = 18
+```
+
+#### Manual Cycle
+
+The manual cycle is for just manual tracking applications or cases where you just need to submit a timecard anytime. Rather than having to remember the date you submitted the last set of times, you can enter these dates into the config file. There are future plans to have the program add these dates automatically, but for now, just add them to a `manual_schedule_history.schedule_name` section manually. Remember that these markers should be the start date of each period, not the end date.
+
+```toml
+[schedules.example]
+type = "manual"
+```
+
+Example manual schedule markers list. Must be a list of dates in sorted order.
+
+```toml
+[manual_schedule_history.example]
+markers = [
+    2025-03-01,
+    2025-05-29,
+    2025-08-18
+]
+```
+
+
 ## Output Formats
 
 Not documented yet.
