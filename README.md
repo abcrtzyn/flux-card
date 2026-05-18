@@ -59,8 +59,10 @@ This section goes through details of all parameters that can be set on the comma
 | **Period Length**| *N/A* | `period_length` in job || *Error (Required)* |
 | **Output** | `-o [dest] [format]` | `outputs` in macro | *Required (no error, no output)* | *Required (no error, no output)*| 
 | **Macro** | `-m [macro]` | *N/A* |||
+| **Schedules**|...||||
 | **Print Config** | `--print-config` | *N/A* |||
 
+*Note: schedules are currently undocumented because they require a rework of the documentation itself.*
 
 #### Timecard File
 

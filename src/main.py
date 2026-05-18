@@ -142,17 +142,17 @@ def get_job_filter(args: ParsedArgs, macro_config: MacroConfig | None, config: A
         return {config.default_job}
 
 
-def get_period_settings(job_filter: str, config: AppConfig):
-    job_config = config.job_config(job_filter)
+def get_period_settings(period_offset: int, job_filter: Set[str], config: AppConfig) -> Tuple[date|None,date|None]:
+    # check that every job in job_filter has the same schedule set
+    schedules = {config.job_config(x).schedule for x in job_filter}
+    if len(schedules) != 1:
+        raise FluxCardInputError(f'in period mode, every job in job_filter must have the same schedule, actually have {schedules}')
+    schedule_key = schedules.pop()
+    if schedule_key is None:
+        raise FluxCardInputError('in period mode, the job(s) filtered by must have a schedule')
+    schedule = config.schedules[schedule_key]
 
-    if job_config.period_anchor is None and job_config.period_length is None:
-        raise FluxCardInputError(f'period settings not given, please specify with [jobs.{job_filter}] period_anchor and period_length config settings')
-    if job_config.period_anchor is None:
-        raise FluxCardInputError(f'anchor missing from [jobs.{job_filter}] section in config')
-    if job_config.period_length is None:
-        raise FluxCardInputError(f'length missing from [jobs.{job_filter}] section in config')
-    
-    return job_config.period_anchor, job_config.period_length
+    return schedule.get_date_filter(period_offset)
 
 
 def get_period_parameter(args: ParsedArgs, macro_config: MacroConfig | None) -> int | None:
@@ -172,16 +172,10 @@ def get_date_filters(args: ParsedArgs, macro_config: MacroConfig | None, job_fil
 
     
     if period is not None:
-        # only allow one job in the filter here
-        if job_filter is None or len(job_filter) > 1:
-            raise FluxCardInputError('in period mode, only one job filter is allowed. If you only have one job, use the default_job config option to set the filter')
-        job_filter_single = job_filter.pop()
-
-        # grab the period settings from job config or command line
-        period_anchor, period_length = get_period_settings(job_filter_single,config)
-            
+        if job_filter is None:
+            raise FluxCardInputError('job_filter is required in period mode and each of the jobs schedules must match')
         # then come up with the start and end date
-        start_date, end_date = calulate_period_date_range(period_anchor, period_length, period)
+        start_date, end_date = get_period_settings(period,job_filter,config)
         
     else:
         # date filtering, straight use them
@@ -191,19 +185,6 @@ def get_date_filters(args: ParsedArgs, macro_config: MacroConfig | None, job_fil
         if start_date is not None and end_date is not None and start_date >= end_date:
             raise FluxCardInputError('start date is after or the same as end date, no results would show')
     
-    return start_date, end_date
-
-def calulate_period_date_range(period_anchor: date, period_length: int, period_offset: int):
-    # how many days since the anchor (can be negative)
-    days_since_anchor = (date.today() - period_anchor).days
-    # which period is today a part of?
-    current_period_index = floor(days_since_anchor / period_length)
-    # offset index by the user's input (0 current, 1 previous, so on)
-    target_period_index = current_period_index - period_offset
-    # shift that many days from the anchor
-    start_date = period_anchor + timedelta(days=target_period_index*period_length)
-    end_date = start_date + timedelta(days=period_length)
-
     return start_date, end_date
 
 
@@ -349,6 +330,7 @@ def main():
         output_timezone = get_output_timezone(args, config)
         macro_config = get_macro_config(args,config)
         job_filter = get_job_filter(args, macro_config, config)
+        
         start_date, end_date = get_date_filters(args, macro_config, job_filter, config)
         outputs = get_outputs(args, macro_config)
     except FluxCardInputError as e:
