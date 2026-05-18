@@ -11,11 +11,11 @@ import sys
 from typing import Iterator, List, Dict, Tuple
 from zoneinfo import ZoneInfo
 
-from config import AppConfig, JobConfig, MacroConfig
+from config import AppConfig, JobConfig, MacroConfig, OutputConfig
 from error import FluxCardInputError
 from output.card import card
 from output.summary import summary
-from period_settings_parser import PeriodSettingsAction
+from settings_parsers import OutputSettingsAction, PeriodSettingsAction
 from segments import Segment
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -30,6 +30,7 @@ class ParsedArgs:
     end_date: date | None
     period: int | None
     period_settings: Tuple[date, int] | None
+    output: OutputConfig | None
     macro: str | None
     print_config: bool
 
@@ -47,9 +48,9 @@ def parse_args() -> ParsedArgs:
 
     parser.add_argument("-p", "--period", type=int, help="Period index (0=current, 1=previous, etc.), replaces date filtering mode")
     parser.add_argument("--period-settings",nargs=2,action=PeriodSettingsAction, metavar=("ANCHOR_DATE","LENGTH"), help="anchor point date (YYYY-MM-DD) and period length in days used in period mode")
+    parser.add_argument("-o", "--output",nargs=2,action=OutputSettingsAction, metavar=("DESTINATION","FORMAT"), help="where and what to output. Destination can be 'stdout' or a file path (absolute or cwd relative), format can be any string that is has an output function.")
 
     parser.add_argument('-m', "--macro", type=str, help="Macro to run, macros can be set in the config file to run commands with job filters and multiple output formats")
-
     parser.add_argument("--print-config",action="store_true", help="Print resolved configuration and exit")
 
     raw_args = parser.parse_args()
@@ -63,6 +64,7 @@ def parse_args() -> ParsedArgs:
         end_date=raw_args.end_date,
         period=raw_args.period,
         period_settings=raw_args.period_settings,
+        output=raw_args.output,
         macro=raw_args.macro,
         print_config=raw_args.print_config,
     )
@@ -203,6 +205,17 @@ def calulate_period_date_range(period_anchor: date, period_length: int, period_o
     return start_date, end_date
 
 
+def get_outputs(args: ParsedArgs, macro_config: MacroConfig | None) -> List[OutputConfig]:
+    # if args.outputs
+    if args.output is not None:
+        return [args.output]
+
+    if macro_config is not None:
+        return macro_config.outputs or []
+    
+    return []
+
+
 
 def check_file_terminator(input_path: Path) -> None:
     """Check that the file terminates properly, will raise an error if not"""
@@ -336,6 +349,7 @@ def main():
         job_filter = get_job_filter(args, macro_config, config)
         job_config = config.job_config(job_filter)
         start_date, end_date = get_date_filters(args, macro_config, job_filter, job_config)
+        outputs = get_outputs(args, macro_config)
     except FluxCardInputError as e:
         raise e
         # print(e, file=sys.stderr)
@@ -353,20 +367,24 @@ def main():
         print('job:', job_filter)
         print('start date:', start_date)
         print('end date:', end_date)
-    
+        print('outputs:')
+        for o in outputs:
+            print(' ',o.output_format,'at',o.output_str())
+            
         exit(0)
 
     check_file_terminator(input_path)
     # file ends properly, lets read some segments
     splits = read_segment_lines(input_path)
     segments = date_filter_segments(job_filter_segments(parse_segments(splits,output_timezone),job_filter),start_date,end_date)
-    grouped_segs = group_segments_by_job_date(segments)
+    data = group_segments_by_date(segments)
 
-    for job, data in grouped_segs.items():
-        with open(f"summary_{job}.txt",'w') as summary_file:
-            summary(summary_file,data)
-        with open(f"timecard_{job}.txt",'w') as card_file:
-            card(card_file,data)
+    for o in outputs:
+        with o.open_stream() as stream:
+            if o.output_format == 'card':
+                card(stream,data)
+            elif o.output_format == 'summary':
+                summary(stream,data)
 
 
 if __name__ == "__main__":

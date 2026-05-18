@@ -55,6 +55,8 @@ class OutputConfig(ABC):
     @contextmanager
     def open_stream(self) -> Generator[TextIOWrapper,None,None]: ...
 
+    @abstractmethod
+    def output_str(self) -> str: ...
 
     @classmethod
     def from_dict(cls, raw: Dict[str,Any], config_path: Path) -> "OutputConfig":
@@ -63,13 +65,20 @@ class OutputConfig(ABC):
         if not isinstance(form,str):
             raise FluxCardInputError(f"format must be a string. Got '{form}'")
         
+        dest = raw.get("dest")
+
+        return OutputConfig.from_args(dest,form,config_path)
+
+    @classmethod
+    def from_args(cls, dest: str | None, form: str, config_path: Path) -> "OutputConfig":
         # destination can be None or stdout for stdout
-        if "dest" not in raw or raw["dest"] == "stdout":
+        if dest is None or dest == "stdout":
             return StdoutConfig(output_format=form)
 
-        dest_file_path = resolve_config_relative_path(raw["dest"], config_path)
+        dest_file_path = resolve_config_relative_path(dest, config_path)
         
         return FileConfig(form,dest_file_path)
+
 
 @dataclass(frozen=True)
 class StdoutConfig(OutputConfig):
@@ -79,6 +88,8 @@ class StdoutConfig(OutputConfig):
     def open_stream(self) -> Generator[TextIOWrapper,None,None]:
         yield cast(TextIOWrapper,sys.stdout)
 
+    def output_str(self) -> str:
+        return 'stdout'
 
 @dataclass(frozen=True)
 class FileConfig(OutputConfig):
@@ -89,6 +100,9 @@ class FileConfig(OutputConfig):
     def open_stream(self) -> Generator[TextIOWrapper,None,None]:
         with self.file_path.open("w") as f:
             yield f
+
+    def output_str(self) -> str:
+        return str(self.file_path)
 
 @dataclass(frozen=True)
 class MacroConfig:

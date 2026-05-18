@@ -57,7 +57,8 @@ This section goes through details of all parameters that can be set on the comma
 | **Period Mode** | `-p [index]` | `period` in macro |||
 | **Period Anchor**| `--period-settings [anchor] [length]` | `period_anchor` in job || *Error (Required)* |
 | **Period Length**| `--period-settings [anchor] [length]` | `period_length` in job || *Error (Required)* |
-| **Macro**| `-m [macro]` | *N/A* |||
+| **Output** | `-o [dest] [format]` | `outputs` in macro | *Required (no error, no output)* | *Required (no error, no output)*| 
+| **Macro** | `-m [macro]` | *N/A* |||
 | **Print Config** | `--print-config` | *N/A* |||
 
 
@@ -124,6 +125,15 @@ Simple option that does all the config resolution, from config file and command 
 Note that period settings are resolved into filter start and end date.
 
 - **CLI**: `--print-config`
+
+## Output
+
+Tell the program to output to a destination (stdout or file path) with a given format function. `dest` can be `stdout` or a file path. When specifing in a macro, `dest` can be left out to select `stdout` or specified explicitly.
+
+- **CLI**: `-o [dest] [format]` or `--output [dest] [format]` (dest file path absolute or relative to cwd)
+- **Macros**: `outputs` [(see macro section)](#macros) (dest file path absolute or relative to config file directory)
+
+
 
 ## Macros
 
