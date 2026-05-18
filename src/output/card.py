@@ -25,7 +25,7 @@ def card(file: TextIOWrapper, data: Dict[date,List[Segment]]):
     
     for dat in sorted(data.keys()):
         segs = data[dat]
-        day_total = sum((s.elapsed() for s in segs), timedelta(0))
+        # day_total = sum((s.elapsed() for s in segs), timedelta(0))
 
         
         # file.write(f"{dat.strftime('%a, %b %d %Y'):16s}  {day_total.total_seconds()/3600:.2f}\n");

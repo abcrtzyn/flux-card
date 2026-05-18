@@ -1,6 +1,5 @@
 
 from argparse import Action, ArgumentError, ArgumentParser, Namespace
-from datetime import date
 from pathlib import Path
 from typing import Any, Sequence, cast
 

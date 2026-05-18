@@ -4,10 +4,8 @@ import argparse
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, date # pyright: ignore[reportPrivateUsage]
-from math import floor
 import os
 from pathlib import Path
-import sys
 from typing import Iterator, List, Dict, Set, Tuple
 from zoneinfo import ZoneInfo
 
@@ -330,7 +328,6 @@ def main():
         output_timezone = get_output_timezone(args, config)
         macro_config = get_macro_config(args,config)
         job_filter = get_job_filter(args, macro_config, config)
-        
         start_date, end_date = get_date_filters(args, macro_config, job_filter, config)
         outputs = get_outputs(args, macro_config)
     except FluxCardInputError as e:
