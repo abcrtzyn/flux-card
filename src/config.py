@@ -13,7 +13,7 @@ from pathlib import Path
 import sys
 import tomllib
 from typing import Any, Callable, Dict, Generator, Iterable, Iterator, List, NoReturn, Sequence, Set, Tuple, TypeGuard, TypeVar, Union, cast
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from error import FluxCardInputTypeError, FluxCardInputValueError
 from monads import Box, Maybe
@@ -63,14 +63,39 @@ def is_date_list_sorted(l: Sequence[date]) -> bool:
 
 
 
-def raise_type_error() -> NoReturn:
-    raise FluxCardInputTypeError('type error')
+def raise_type_error(key: str, got_type: str, expected_type: str, more_info: str = '') -> NoReturn:
+    raise FluxCardInputTypeError(f'type error at {key}, expected type {expected_type}, but got type {got_type}{f'\n{more_info}' if more_info else ''}')
 
-def raise_value_error() -> NoReturn:
-    raise FluxCardInputValueError('value error')
+def raise_value_error(key: str, value: Any, error: str) -> NoReturn:
+    raise FluxCardInputValueError(f'value error at {key}, expected {error}, but got {value}')
 
-def raise_required_field_error() -> NoReturn:
-    raise FluxCardInputValueError('field required error')
+def raise_required_field_error(key: str) -> NoReturn:
+    raise FluxCardInputValueError(f'{key} field required')
+
+from typing import Callable, TypeVar, Any
+
+K = TypeVar("K")
+V = TypeVar("V")
+R = TypeVar("R")
+
+def with_key_note(
+    note_factory: Callable[[K], str], 
+    action: Callable[[K, V], R]
+) -> Callable[[K, V], R]:
+    """
+    Wraps an item-processing closure, dynamically generating and 
+    attaching a traceback note using the item's runtime key.
+    """
+    def wrapper(key: K, value: V) -> R:
+        try:
+            return action(key, value)
+        except Exception as e:
+            # Build the specific note string using the loop's key on the fly
+            dynamic_note = note_factory(key)
+            e.add_note(dynamic_note)
+            raise e
+    return wrapper
+
 
 
 def dict_for_each(function: Callable[[str,TomlType],T]) -> Callable[[Dict[str,TomlType]],Dict[str,T]]:
@@ -102,57 +127,71 @@ class ScheduleConfig(ABC):
 
     @classmethod
     def from_dict(cls, raw: TomlTable,manual_schedules_raw: TomlType|None) -> "ScheduleConfig":
-        
-        schedule_type = (
-            Box(raw.get('type'))
-            .map(lambda x: x if x is not None else raise_required_field_error())
-            .map(lambda x: x if isinstance(x,str) else raise_type_error())
-            .unwrap()
-        )
-        
+        try:
+            schedule_type = (
+                Box(raw.get('type'))
+                .map(lambda x: x if x is not None else raise_required_field_error('type'))
+                .map(lambda x: x if isinstance(x,str) else raise_type_error('type',type(x).__name__,'str'))
+                .unwrap()
+            )
+        except Exception as e:
+            e.add_note('at key type')
+            raise e
         
         match schedule_type:
             case 'days_cycle':
-                anchor = (
-                    Box(raw.get('period_anchor'))
-                    .map(lambda x: x if x is not None else raise_required_field_error())
-                    .map(lambda x: x if isinstance(x,date) else raise_type_error())
-                    .unwrap()
-                )
+                try:
+                    anchor = (
+                        Box(raw.get('period_anchor'))
+                        .map(lambda x: x if x is not None else raise_required_field_error('period_anchor'))
+                        .map(lambda x: x if isinstance(x,date) else raise_type_error('days_cycle',type(x).__name__,'date'))
+                        .unwrap()
+                    )
+                except Exception as e:
+                    e.add_note('at key period_anchor')
+                    raise e
 
-                length = (
-                    Box(raw.get('period_length'))
-                    .map(lambda x: x if x is not None else raise_required_field_error())
-                    .map(lambda x: x if isinstance(x,int) else raise_type_error())
-                    .unwrap()
-                )
+                try:
+                    length = (
+                        Box(raw.get('period_length'))
+                        .map(lambda x: x if x is not None else raise_required_field_error('period_length'))
+                        .map(lambda x: x if isinstance(x,int) else raise_type_error('period_length',type(x).__name__,'int'))
+                        .unwrap()
+                    )
+                except Exception as e:
+                    e.add_note('at key period_length')
+                    raise e
 
                 return DaysCycleConfig(anchor,length)
             case 'monthly':
-                start_day = (
-                    Box(raw.get('start_day'))
-                    .map(lambda x: x if x is not None else raise_required_field_error())
-                    .map(lambda x: x if isinstance(x,int) else raise_type_error())
-                    .map(lambda x: x if (1 <= x <= 28) else raise_value_error())
-                    .unwrap()
-                )
+                try:
+                    start_day = (
+                        Box(raw.get('start_day'))
+                        .map(lambda x: x if x is not None else raise_required_field_error('start_day'))
+                        .map(lambda x: x if isinstance(x,int) else raise_type_error('start_day',type(x).__name__,'int'))
+                        .map(lambda x: x if (1 <= x <= 28) else raise_value_error('start_day',x,'a value between 1 and 28 inclusive'))
+                        .unwrap()
+                    )
+                except Exception as e:
+                    e.add_note('at key start_day')
+                    raise e
                     
                 return MonthCycleConfig(start_day)
             case 'manual':
                 # have to go pick up the historical markers
                 markers = (
                     Maybe(manual_schedules_raw)
-                    .map(lambda x: x if isinstance(x,dict) else raise_type_error())
+                    .map(lambda x: x if isinstance(x,dict) else raise_type_error('manual_schedule_history.[job_name]',type(x).__name__,'dict'))
                     .map(lambda x: x.get('markers',[]))
-                    .map(lambda x: x if isinstance(x,list) else raise_type_error())
-                    .map(lambda x: x if is_list_dates(x) else raise_type_error())
-                    .map(lambda x: x if is_date_list_sorted(x) else raise_value_error())
+                    .map(lambda x: x if isinstance(x,list) else raise_type_error('markers',type(x).__name__,'list'))
+                    .map(lambda x: x if is_list_dates(x) else raise_type_error('markers',type(x).__name__,'list of dates'))
+                    .map(lambda x: x if is_date_list_sorted(x) else raise_value_error('markers',x,'the list to be sorted'))
                     .unwrap_or(list)
                 )
                 
                 return ManualCycleConfig(markers)
             case _:
-                raise_value_error()
+                raise FluxCardInputValueError(f'Unknown schedule type {schedule_type} at key schedule')
         
         assert False, "unreachable"
 
@@ -226,7 +265,7 @@ class ManualCycleConfig(ScheduleConfig):
         period_end_index = current_end_index - period_offset
 
         if period_end_index < 0 or period_end_index > len_markers:
-            raise_value_error()
+            raise_value_error('period',period_offset,f'a value between {current_end_index} and {current_end_index-len_markers} for this manual schedule')
             # raise FluxCardInputValueError(f'invalid period {period_offset} in this manual schedule, the past most period is {current_end_index}, the future most period is {current_end_index-len_markers}')
 
         start_date = None if period_end_index == 0 else self.markers[period_end_index-1]
@@ -242,13 +281,17 @@ class JobConfig:
     
     @classmethod
     def from_dict(cls, raw: TomlTable, schedule_keys: Iterable[str]) -> "JobConfig":
-        schedule = (
-            Maybe(raw.get('schedule'))
-            .map(lambda x: x if isinstance(x,str) else raise_type_error())
-            .map(lambda x: x if x in schedule_keys else raise_value_error())
-            .unwrap()
-        )
-        
+        try:
+            schedule = (
+                Maybe(raw.get('schedule'))
+                .map(lambda x: x if isinstance(x,str) else raise_type_error('schedule',type(x).__name__,'str'))
+                .map(lambda x: x if x in schedule_keys else raise_value_error('schedule',x,f'a key in schedules {schedule_keys}'))
+                .unwrap()
+            )
+        except Exception as e:
+            e.add_note('at key schedule')
+            raise e
+
         return cls(schedule)
 
 @dataclass(frozen=True)
@@ -274,11 +317,23 @@ class OutputConfig(ABC):
     @classmethod
     def from_dict(cls, raw: TomlTable, config_path: Path) -> "OutputConfig":
         # output is required, otherwise, how would we know how to output?
-        form = Box(raw.get('format')).map(lambda x: x if x is not None else raise_required_field_error()).map(lambda x: x if isinstance(x, str) else raise_type_error()).unwrap()
+        try:
+            form = (
+                Box(raw.get('format'))
+                .map(lambda x: x if x is not None else raise_required_field_error('format'))
+                .map(lambda x: x if isinstance(x, str) else raise_type_error('format',type(x).__name__,'str'))
+                .unwrap()
+            )
+        except Exception as e:
+            e.add_note('at key format')
+            raise e
         # remove the key from the dictionary
         raw.pop('format')
-        
-        dest = Box(raw.get('dest','stdout')).map(lambda x: x if isinstance(x, str) else raise_type_error()).unwrap()
+        try:
+            dest = Box(raw.get('dest','stdout')).map(lambda x: x if isinstance(x, str) else raise_type_error('dest',type(x).__name__,'str')).unwrap()
+        except Exception as e:
+            e.add_note('at key dest')
+            raise e
         # remove the key from the dictionary
         try:
             raw.pop("dest")
@@ -300,8 +355,7 @@ class OutputConfig(ABC):
             # check the given kwargs for invalid keys (keys not supported by the formatter)
             invalid_keys = set(extra_kwargs.keys()) - set(sig.parameters.keys())
             if invalid_keys:
-                raise_value_error()
-                # raise FluxCardInputError(f'Format "{form}" received unsupported options: {', '.join(invalid_keys)}')
+                raise FluxCardInputValueError(f'Format "{form}" received unsupported options: {', '.join(invalid_keys)}')
         # we have passed the key check here
 
         # destination can be None or stdout for stdout
@@ -343,28 +397,39 @@ class MacroConfig:
 
     @classmethod
     def from_dict(cls, raw: TomlTable, config_path: Path) -> "MacroConfig":
-        
-        job_filter = (
-            Maybe(raw.get('job_filter'))
-            .map(lambda x: {x} if isinstance(x,str) else 
-                           set(x) if isinstance(x,list) and is_list_strings(x)
-                           else raise_type_error())
-            .map(lambda x: x if '_' not in x else raise_value_error())
-            .unwrap()
-        )
+        try:
+            job_filter = (
+                Maybe(raw.get('job_filter'))
+                .map(lambda x: {x} if isinstance(x,str) else 
+                            set(x) if isinstance(x,list) and is_list_strings(x)
+                            else raise_type_error('job_filter',type(x).__name__,'str or list of str'))
+                .map(lambda x: x if '_' not in x else raise_value_error('job_filter',x,'any other string besides an underscore. Underscore is reserved for command line clearing the filter'))
+                .unwrap()
+            )
+        except Exception as e:
+            e.add_note('at key job_filter')
+            raise e
 
-        period = (
-            Maybe(raw.get('period'))
-            .map(lambda x: x if isinstance(x,int) else raise_type_error())
-            .unwrap()
-        )
+        try:
+            period = (
+                Maybe(raw.get('period'))
+                .map(lambda x: x if isinstance(x,int) else raise_type_error('period',type(x).__name__,'int'))
+                .unwrap()
+            )
+        except Exception as e:
+            e.add_note('at key period')
+            raise e
 
-        outputs = (
-            Box(raw.get('outputs',[]))
-            .map(lambda x: x if isinstance(x,list) else raise_type_error())
-            .map(list_for_each(lambda i,x: OutputConfig.from_dict(x,config_path) if isinstance(x,dict) else raise_type_error()))
-            .unwrap()
-        )
+        try:
+            outputs = (
+                Box(raw.get('outputs',[]))
+                .map(lambda x: x if isinstance(x,list) else raise_type_error('outputs',type(x).__name__,'list'))
+                .map(list_for_each(with_key_note(lambda i: f'in output {i}',lambda i,x: OutputConfig.from_dict(x,config_path) if isinstance(x,dict) else raise_type_error(f'outputs.{i}',type(x).__name__,'dict'))))
+                .unwrap()
+            )
+        except Exception as e:
+            e.add_note('at key outputs')
+            raise e
 
         return cls(job_filter,period,outputs)
 
@@ -380,54 +445,87 @@ class AppConfig:
     
     @classmethod
     def from_dict(cls, raw: TomlTable, config_path: Path) -> "AppConfig":
-        
-        timecard_path = (
-            Maybe(raw.get('timecard_path'))
-            .map(lambda x: x if isinstance(x,str) else raise_type_error())
-            .map(lambda x: resolve_config_relative_path(x,config_path))
-            .unwrap()
-        )
-        
-        output_timezone = (
-            Maybe(raw.get('output_timezone'))
-            .map(lambda x: x if isinstance(x,str) else raise_type_error())
-            .map(ZoneInfo)
-            .unwrap()
-        )
+        try:
+            timecard_path = (
+                Maybe(raw.get('timecard_path'))
+                .map(lambda x: x if isinstance(x,str) else raise_type_error('timecard_path',type(x).__name__,'str'))
+                .map(lambda x: resolve_config_relative_path(x,config_path))
+                .unwrap()
+            )
+        except Exception as e:
+            e.add_note('at key timecard_path')
+            raise e
 
-        default_job = (
-            Maybe(raw.get('default_job'))
-            .map(lambda x: x if isinstance(x,str) else raise_type_error())
-            .unwrap()
-        )
-        
-        manual_schedules = (
-            Maybe(raw.get('manual_schedule_history'))
-            .map(lambda x: x if isinstance(x,dict) else raise_type_error())
-            .unwrap_or(dict)
-        )
+        try:
+            output_timezone = (
+                Maybe(raw.get('output_timezone'))
+                .map(lambda x: x if isinstance(x,str) else raise_type_error('output_timezone',type(x).__name__,'str'))
+                .map(ZoneInfo)
+                .unwrap()
+            )
+        except (ValueError, ZoneInfoNotFoundError) as e:
+            e.add_note('at key output_timezone')
+            raise FluxCardInputValueError(e)
+            
+        except Exception as e:
+            e.add_note('at key output_timezone')
+            raise e
 
-        schedules = (
-            Maybe(raw.get('schedules'))
-            .map(lambda x: x if isinstance(x,dict) else raise_type_error())
-            .map(dict_for_each(lambda k,v: (ScheduleConfig.from_dict(v,manual_schedules.get(k)) if isinstance(v,dict) else raise_type_error())))
-            .unwrap_or(dict)
-        )
+        try:
+            default_job = (
+                Maybe(raw.get('default_job'))
+                .map(lambda x: x if isinstance(x,str) else raise_type_error('default_job',type(x).__name__,'str'))
+                .unwrap()
+            )
+        except Exception as e:
+            e.add_note('at key default_job')
+            raise e
+
+        try:
+            manual_schedules = (
+                Maybe(raw.get('manual_schedule_history'))
+                .map(lambda x: x if isinstance(x,dict) else raise_type_error('manual_schedule_history',type(x).__name__,'dict'))
+                .unwrap_or(dict)
+            )
+        except Exception as e:
+            e.add_note('at table manual_schedule_history')
+            raise e
+
+        try:
+            schedules = (
+                Maybe(raw.get('schedules'))
+                .map(lambda x: x if isinstance(x,dict) else raise_type_error('schedules',type(x).__name__,'dict'))
+                .map(dict_for_each(with_key_note(lambda k: f'in schedule {k}',lambda k,v: (ScheduleConfig.from_dict(v,manual_schedules.get(k)) if isinstance(v,dict) else raise_type_error(f'schedules.{k}',type(v).__name__,'dict')))))
+                .unwrap_or(dict)
+            )
+        except Exception as e:
+            e.add_note('at table schedules')
+            raise e
+        
         schedule_keys = schedules.keys()
 
-        jobs = (
-            Maybe(raw.get('jobs'))
-            .map(lambda x: x if isinstance(x,dict) else raise_type_error())
-            .map(dict_for_each(lambda k,v: (JobConfig.from_dict(v,schedule_keys) if isinstance(v,dict) else raise_type_error())))
-            .unwrap_or(dict)
-        )
+        try:
+            jobs = (
+                Maybe(raw.get('jobs'))
+                .map(lambda x: x if isinstance(x,dict) else raise_type_error('jobs',type(x).__name__,'dict'))
+                .map(dict_for_each(with_key_note(lambda k: f'in job {k}',lambda k,v: (JobConfig.from_dict(v,schedule_keys) if isinstance(v,dict) else raise_type_error(f'jobs.{k}',type(v).__name__,'dict')))))
+                .unwrap_or(dict)
+            )
+        except Exception as e:
+            e.add_note('at table jobs')
+            raise e
 
-        macros = (
-            Maybe(raw.get('macros'))
-            .map(lambda x: x if isinstance(x,dict) else raise_type_error())
-            .map(dict_for_each(lambda k,v: (MacroConfig.from_dict(v,config_path) if isinstance(v,dict) else raise_type_error())))
-            .unwrap_or(dict)
-        )
+        try:
+            macros = (
+                Maybe(raw.get('macros'))
+                .map(lambda x: x if isinstance(x,dict) else raise_type_error('macros',type(x).__name__,'dict'))
+                .map(dict_for_each(with_key_note(lambda k: f'in macro {k}',lambda k,v: (MacroConfig.from_dict(v,config_path) if isinstance(v,dict) else raise_type_error(f'macros.{k}',type(v).__name__,'dict')))))
+                .unwrap_or(dict)
+            )
+        except Exception as e:
+            e.add_note('at key macros')
+            raise e
+
 
         return cls(
             timecard_path=timecard_path,
