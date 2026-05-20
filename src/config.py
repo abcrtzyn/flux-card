@@ -4,30 +4,51 @@
 
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
-from dataclasses import dataclass, field
-from datetime import date, timedelta
+from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta
 import inspect
 from io import TextIOWrapper
 from math import floor
 from pathlib import Path
 import sys
 import tomllib
-from typing import Any, Dict, Generator, Iterable, List, Sequence, Set, Tuple, cast, Iterator, TypeVar
+from typing import Any, Callable, Dict, Generator, Iterable, Iterator, List, NoReturn, Sequence, Set, Tuple, TypeGuard, TypeVar, Union, cast
 from zoneinfo import ZoneInfo
 
-from error import FluxCardInputError
+from error import FluxCardInputTypeError, FluxCardInputValueError
+from monads import Box, Maybe
 from output_registry import FormatterProtocol, get_formatter
 from segments import Segment
 
+# Define the allowed scalar types from the TOML specification
+TomlScalar = Union[str, int, float, bool, datetime, date, time]
+
+TomlType = Union[
+    TomlScalar,
+    List["TomlType"],
+    Dict[str, "TomlType"]
+]
+
+TomlTable = Dict[str, TomlType]
+TomlArray = List[TomlType]
+
+
+
 
 T = TypeVar('T')
-
 
 ### EVER NEED TO HAVE AN ENUMERATED LIST IN REVERSE?
 ### USE MY FANCY FUNCTION
 def reverse_enumerate(sequence: list[T]) -> Iterator[Tuple[int, T]]:
     """Yields (index, item) pairs backwards from the end of a list."""
     return zip(range(len(sequence)-1, -1, -1), reversed(sequence))
+
+
+def is_list_dates(l: List[Any]) -> TypeGuard[List[date]]:
+    return all(isinstance(x,date) for x in l)
+
+def is_list_strings(l: List[Any]) -> TypeGuard[List[str]]:
+    return all(isinstance(x,date) for x in l)
 
 
 def is_date_list_sorted(l: Sequence[date]) -> bool:
@@ -40,6 +61,23 @@ def is_date_list_sorted(l: Sequence[date]) -> bool:
     # Compare each marker with the next one in a single lazy pass
     return all(l[i] <= l[i + 1] for i in range(len(l) - 1))
 
+
+
+def raise_type_error() -> NoReturn:
+    raise FluxCardInputTypeError('type error')
+
+def raise_value_error() -> NoReturn:
+    raise FluxCardInputValueError('value error')
+
+def raise_required_field_error() -> NoReturn:
+    raise FluxCardInputValueError('field required error')
+
+
+def dict_for_each(function: Callable[[str,TomlType],T]) -> Callable[[Dict[str,TomlType]],Dict[str,T]]:
+    return lambda x: {key: function(key,value) for key, value in x.items()}
+
+def list_for_each(function: Callable[[int,TomlType],T]) -> Callable[[List[TomlType]],List[T]]:
+    return lambda x: [function(i,value) for i,value in enumerate(x)]
 
 
 
@@ -63,51 +101,58 @@ class ScheduleConfig(ABC):
     def get_date_filter(self, period_offset: int) -> Tuple[date|None,date|None]: ...
 
     @classmethod
-    def from_dict(cls, raw: Dict[str, Any],manual_schedules_raw: Any) -> "ScheduleConfig":        
-        schedule_type = raw.get('type')
-        if schedule_type is None:
-            raise FluxCardInputError('type required')
-        if not isinstance(schedule_type,str):
-            raise FluxCardInputError(f'type of type must be a string, got "{schedule_type}')
+    def from_dict(cls, raw: TomlTable,manual_schedules_raw: TomlType|None) -> "ScheduleConfig":
+        
+        schedule_type = (
+            Box(raw.get('type'))
+            .map(lambda x: x if x is not None else raise_required_field_error())
+            .map(lambda x: x if isinstance(x,str) else raise_type_error())
+            .unwrap()
+        )
+        
         
         match schedule_type:
             case 'days_cycle':
-                anchor = raw.get("period_anchor")
-                if anchor is None:
-                    raise FluxCardInputError("period_anchor is required for a days_cycle schedule")
-                if not isinstance(anchor,date):
-                    raise FluxCardInputError(f"period_anchor must be a date in YYYY-MM-DD format, got '{anchor}'")
-                    
-                length = raw.get("period_length")
-                if length is None:
-                    raise FluxCardInputError("period_length is required for a days_cycle schedule")
-                if not isinstance(length,int):
-                    raise FluxCardInputError(f"period_length must be an int, got '{length}'")
+                anchor = (
+                    Box(raw.get('period_anchor'))
+                    .map(lambda x: x if x is not None else raise_required_field_error())
+                    .map(lambda x: x if isinstance(x,date) else raise_type_error())
+                    .unwrap()
+                )
+
+                length = (
+                    Box(raw.get('period_length'))
+                    .map(lambda x: x if x is not None else raise_required_field_error())
+                    .map(lambda x: x if isinstance(x,int) else raise_type_error())
+                    .unwrap()
+                )
+
                 return DaysCycleConfig(anchor,length)
             case 'monthly':
-                start_day = raw.get("start_day")
-                if start_day is None:
-                    raise FluxCardInputError("start_day is required for a monthly schedule")
-                if not isinstance(start_day,int) or not (1 <= start_day <= 28):
-                    raise FluxCardInputError(f"start_day must be an int between 1 and 28 inclusive, got '{start_day}'")
+                start_day = (
+                    Box(raw.get('start_day'))
+                    .map(lambda x: x if x is not None else raise_required_field_error())
+                    .map(lambda x: x if isinstance(x,int) else raise_type_error())
+                    .map(lambda x: x if (1 <= x <= 28) else raise_value_error())
+                    .unwrap()
+                )
+                    
                 return MonthCycleConfig(start_day)
             case 'manual':
                 # have to go pick up the historical markers
-                if manual_schedules_raw is None:
-                    return ManualCycleConfig([])
-                if not isinstance(manual_schedules_raw,dict):
-                    raise ValueError('manual schedule markers is not a dictionary')
-                markers = cast(Dict[str,Any],manual_schedules_raw).get('markers',[])
-                if not isinstance(markers,list):
-                    raise ValueError('markers is not a list')
-                if not all(isinstance(x,date) for x in markers): # pyright: ignore[reportUnknownVariableType]
-                    raise ValueError('not everything in markers is a date')
-                if not is_date_list_sorted(cast(List[date],markers)):
-                    raise ValueError('markers is not sorted')
+                markers = (
+                    Maybe(manual_schedules_raw)
+                    .map(lambda x: x if isinstance(x,dict) else raise_type_error())
+                    .map(lambda x: x.get('markers',[]))
+                    .map(lambda x: x if isinstance(x,list) else raise_type_error())
+                    .map(lambda x: x if is_list_dates(x) else raise_type_error())
+                    .map(lambda x: x if is_date_list_sorted(x) else raise_value_error())
+                    .unwrap_or(list)
+                )
                 
-                return ManualCycleConfig(cast(List[date],markers))
+                return ManualCycleConfig(markers)
             case _:
-                raise FluxCardInputError(f'schedule type "{schedule_type}" is unknown')
+                raise_value_error()
         
         assert False, "unreachable"
 
@@ -181,7 +226,8 @@ class ManualCycleConfig(ScheduleConfig):
         period_end_index = current_end_index - period_offset
 
         if period_end_index < 0 or period_end_index > len_markers:
-            raise FluxCardInputError(f'invalid period {period_offset} in this manual schedule, the past most period is {current_end_index}, the future most period is {current_end_index-len_markers}')
+            raise_value_error()
+            # raise FluxCardInputValueError(f'invalid period {period_offset} in this manual schedule, the past most period is {current_end_index}, the future most period is {current_end_index-len_markers}')
 
         start_date = None if period_end_index == 0 else self.markers[period_end_index-1]
         end_date = None if period_end_index == len_markers else self.markers[period_end_index]
@@ -192,21 +238,24 @@ class ManualCycleConfig(ScheduleConfig):
 @dataclass(frozen=True)
 class JobConfig:
     # key into the schedules param
-    schedule: str | None = field(default=None)
+    schedule: str | None # = field(default=None)
     
     @classmethod
-    def from_dict(cls, raw: Dict[str, Any], schedule_keys: Iterable[str]) -> "JobConfig":
-        schedule = raw.get("schedule")
-        if schedule is not None and (not isinstance(schedule,str) or schedule not in schedule_keys):
-            raise FluxCardInputError(f"job schedule must be a valid schedule key string, got '{schedule}'")
-
+    def from_dict(cls, raw: TomlTable, schedule_keys: Iterable[str]) -> "JobConfig":
+        schedule = (
+            Maybe(raw.get('schedule'))
+            .map(lambda x: x if isinstance(x,str) else raise_type_error())
+            .map(lambda x: x if x in schedule_keys else raise_value_error())
+            .unwrap()
+        )
+        
         return cls(schedule)
 
 @dataclass(frozen=True)
 class OutputConfig(ABC):
     format_key: str 
     format_function: FormatterProtocol
-    kwargs: Dict[str,Any]
+    kwargs: TomlTable
     
     def execute_output(self, data: Dict[date, List[Segment]]) -> None:
         """Runs the output formatter function"""
@@ -223,19 +272,24 @@ class OutputConfig(ABC):
     def output_str(self) -> str: ...
 
     @classmethod
-    def from_dict(cls, raw: Dict[str,Any], config_path: Path) -> "OutputConfig":
+    def from_dict(cls, raw: TomlTable, config_path: Path) -> "OutputConfig":
         # output is required, otherwise, how would we know how to output?
-        form = raw.pop("format")
-        if not isinstance(form,str):
-            raise FluxCardInputError(f"format must be a string. Got '{form}'")
+        form = Box(raw.get('format')).map(lambda x: x if x is not None else raise_required_field_error()).map(lambda x: x if isinstance(x, str) else raise_type_error()).unwrap()
+        # remove the key from the dictionary
+        raw.pop('format')
         
-        dest = raw.pop("dest")
+        dest = Box(raw.get('dest','stdout')).map(lambda x: x if isinstance(x, str) else raise_type_error()).unwrap()
+        # remove the key from the dictionary
+        try:
+            raw.pop("dest")
+        except:
+            pass
 
         # give these argument versions for actual parsing, along with the rest of the arguments as is.
         return OutputConfig.from_args(dest,form,config_path,raw)
 
     @classmethod
-    def from_args(cls, dest: str | None, form: str, config_path: Path, extra_kwargs: Dict[str,Any]) -> "OutputConfig":
+    def from_args(cls, dest: str, form: str, config_path: Path, extra_kwargs: TomlTable) -> "OutputConfig":
         # get the formatter
         formatter = get_formatter(form)
 
@@ -246,11 +300,12 @@ class OutputConfig(ABC):
             # check the given kwargs for invalid keys (keys not supported by the formatter)
             invalid_keys = set(extra_kwargs.keys()) - set(sig.parameters.keys())
             if invalid_keys:
-                raise FluxCardInputError(f'Format "{form}" received unsupported options: {', '.join(invalid_keys)}')
+                raise_value_error()
+                # raise FluxCardInputError(f'Format "{form}" received unsupported options: {', '.join(invalid_keys)}')
         # we have passed the key check here
 
         # destination can be None or stdout for stdout
-        if dest is None or dest == "stdout":
+        if dest == "stdout":
             return StdoutConfig(form,formatter,extra_kwargs)
 
         dest_file_path = resolve_config_relative_path(dest, config_path)
@@ -287,86 +342,92 @@ class MacroConfig:
     outputs: List[OutputConfig] #= cast(List[OutputConfig],field(default_factory=list))
 
     @classmethod
-    def from_dict(cls, raw: Dict[str,Any], config_path: Path) -> "MacroConfig":
+    def from_dict(cls, raw: TomlTable, config_path: Path) -> "MacroConfig":
         
+        job_filter = (
+            Maybe(raw.get('job_filter'))
+            .map(lambda x: {x} if isinstance(x,str) else 
+                           set(x) if isinstance(x,list) and is_list_strings(x)
+                           else raise_type_error())
+            .map(lambda x: x if '_' not in x else raise_value_error())
+            .unwrap()
+        )
 
-        job_filter_raw = raw.get('job_filter')
-        if job_filter_raw is None:
-            job_filter = None
-        elif isinstance(job_filter_raw,str):
-            job_filter = {job_filter_raw}
-        elif isinstance(job_filter_raw,list):
-            job_filter = set(cast(List[str],job_filter_raw))
-        else:
-            raise FluxCardInputError(f"job filter must be a string or list of strings. Got '{job_filter_raw}'")
+        period = (
+            Maybe(raw.get('period'))
+            .map(lambda x: x if isinstance(x,int) else raise_type_error())
+            .unwrap()
+        )
 
-        # check for _ job which is not allowed.
-        if job_filter is not None and '_' in job_filter:
-            raise FluxCardInputError("job _ not allowed")
-
-        period = raw.get('period')
-        if period is not None and not isinstance(period,int):
-            raise FluxCardInputError(f"period must be an int. Got '{period}'")
-        
-        outputs: List[OutputConfig] = []
-        for index, value in enumerate(raw.get('outputs', [])):
-            try:
-                outputs.append(OutputConfig.from_dict(value,config_path))
-            except Exception as e:
-                e.add_note(f'in outputs index {index} (0 based)')
-                raise e
+        outputs = (
+            Box(raw.get('outputs',[]))
+            .map(lambda x: x if isinstance(x,list) else raise_type_error())
+            .map(list_for_each(lambda i,x: OutputConfig.from_dict(x,config_path) if isinstance(x,dict) else raise_type_error()))
+            .unwrap()
+        )
 
         return cls(job_filter,period,outputs)
 
 
 @dataclass(frozen=True)
 class AppConfig:
-    timecard_path: Path | None = field(default=None)
-    output_timezone: ZoneInfo | None = field(default=None)
-    default_job: str | None = field(default=None)
-    schedules: Dict[str,ScheduleConfig] = cast(Dict[str, ScheduleConfig],field(default_factory=dict))
-    jobs: Dict[str, JobConfig] = cast(Dict[str, JobConfig],field(default_factory=dict))
-    macros: Dict[str, MacroConfig] = cast(Dict[str, MacroConfig], field(default_factory=dict))
+    timecard_path: Path | None # = field(default=None)
+    output_timezone: ZoneInfo | None # = field(default=None)
+    default_job: str | None # = field(default=None)
+    schedules: Dict[str,ScheduleConfig] # = cast(Dict[str, ScheduleConfig],field(default_factory=dict))
+    jobs: Dict[str, JobConfig] # = cast(Dict[str, JobConfig],field(default_factory=dict))
+    macros: Dict[str, MacroConfig] # = cast(Dict[str, MacroConfig], field(default_factory=dict))
     
     @classmethod
-    def from_dict(cls, raw: Dict[str, Any], config_path: Path) -> "AppConfig":
-
-        timecard_path = resolve_config_relative_path(raw["timecard_path"], config_path) if "timecard_path" in raw else None
+    def from_dict(cls, raw: TomlTable, config_path: Path) -> "AppConfig":
         
-        output_timezone_str = cast(str|None,raw.get("output_timezone"))
-        output_timezone = ZoneInfo(output_timezone_str) if output_timezone_str else None
-
-        default_job = raw.get("default_job")
-        if default_job is not None and not isinstance(default_job,str):
-            raise FluxCardInputError(f"default job must be a string, but got '{default_job}'")
+        timecard_path = (
+            Maybe(raw.get('timecard_path'))
+            .map(lambda x: x if isinstance(x,str) else raise_type_error())
+            .map(lambda x: resolve_config_relative_path(x,config_path))
+            .unwrap()
+        )
         
-        manual_schedules = cast(Dict[str,Any],raw.get('manual_schedule_history',{}))
+        output_timezone = (
+            Maybe(raw.get('output_timezone'))
+            .map(lambda x: x if isinstance(x,str) else raise_type_error())
+            .map(ZoneInfo)
+            .unwrap()
+        )
 
-        schedules: Dict[str,ScheduleConfig] = {}
-        for name, value in raw.get("schedules", {}).items():
-            try:
-                manual_schedule = manual_schedules.get(name,None)
-                schedules[name] = ScheduleConfig.from_dict(value,manual_schedule)
-            except Exception as e:
-                e.add_note(f'in schedule config {name}')
-                raise e
+        default_job = (
+            Maybe(raw.get('default_job'))
+            .map(lambda x: x if isinstance(x,str) else raise_type_error())
+            .unwrap()
+        )
+        
+        manual_schedules = (
+            Maybe(raw.get('manual_schedule_history'))
+            .map(lambda x: x if isinstance(x,dict) else raise_type_error())
+            .unwrap_or(dict)
+        )
 
+        schedules = (
+            Maybe(raw.get('schedules'))
+            .map(lambda x: x if isinstance(x,dict) else raise_type_error())
+            .map(dict_for_each(lambda k,v: (ScheduleConfig.from_dict(v,manual_schedules.get(k)) if isinstance(v,dict) else raise_type_error())))
+            .unwrap_or(dict)
+        )
+        schedule_keys = schedules.keys()
 
-        jobs: Dict[str,JobConfig] = {}
-        for name, value in raw.get("jobs", {}).items():
-            try:
-                jobs[name] = JobConfig.from_dict(value, schedules.keys())
-            except Exception as e:
-                e.add_note(f'in job config {name}')
-                raise e
+        jobs = (
+            Maybe(raw.get('jobs'))
+            .map(lambda x: x if isinstance(x,dict) else raise_type_error())
+            .map(dict_for_each(lambda k,v: (JobConfig.from_dict(v,schedule_keys) if isinstance(v,dict) else raise_type_error())))
+            .unwrap_or(dict)
+        )
 
-        macros: Dict[str,MacroConfig] = {}
-        for name, value in raw.get("macros", {}).items():
-            try:
-                macros[name] = MacroConfig.from_dict(value,config_path)
-            except Exception as e:
-                e.add_note(f'in macro {name}')
-                raise e
+        macros = (
+            Maybe(raw.get('macros'))
+            .map(lambda x: x if isinstance(x,dict) else raise_type_error())
+            .map(dict_for_each(lambda k,v: (MacroConfig.from_dict(v,config_path) if isinstance(v,dict) else raise_type_error())))
+            .unwrap_or(dict)
+        )
 
         return cls(
             timecard_path=timecard_path,
@@ -380,11 +441,11 @@ class AppConfig:
     @classmethod
     def load(cls, path: Path) -> "AppConfig":
         with path.open("rb") as f:
-            raw = tomllib.load(f)
+            raw = cast(TomlTable,tomllib.load(f))
         return cls.from_dict(raw, path)
 
     def job_config(self, job_name: str | None) -> JobConfig:
         if job_name is None:
-            return JobConfig()
+            return JobConfig(None)
         # if the job is not listed in the config, return a blank one as well
-        return self.jobs.get(job_name, JobConfig())
+        return self.jobs.get(job_name, JobConfig(None))
