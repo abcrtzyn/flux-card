@@ -8,14 +8,29 @@ FormatterProtocol = Callable[Concatenate[io.TextIOWrapper,Dict[date, List[Segmen
 
 _OUTPUT_REGISTRY: Dict[str, FormatterProtocol] = {}
 
+def get_function_info(func: FormatterProtocol):
+        current_func_name = func.__name__
+        current_func_file = func.__code__.co_filename
+        current_func_line = func.__code__.co_firstlineno
+        current_formatted = f'function {current_func_name} at {current_func_file}:{current_func_line}'
+        return current_formatted
+
+
 F = TypeVar('F', bound=FormatterProtocol)
 
 def register_formatter(name: str) -> Callable[[F], F]:
     """Decorator to register an output format layout style."""
 
     def decorator(func: F) -> F:
+        if name in _OUTPUT_REGISTRY:
+            # can't have two functions with the same key, raise an error.
+            colliding_formatted = get_function_info(_OUTPUT_REGISTRY[name])
+            current_formatted = get_function_info(func)
+            raise Exception(f'duplicated format name "{name}"\n- {colliding_formatted}\n- {current_formatted}')
+        
         _OUTPUT_REGISTRY[name] = func
         return func
+
     
     return decorator
 
