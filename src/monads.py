@@ -1,5 +1,4 @@
-from typing import Generic, TypeVar, Callable, Union, Tuple
-from error import FluxCardInputTypeError
+from typing import Generic, TypeVar, Callable
 
 T = TypeVar("T")
 U = TypeVar("U")

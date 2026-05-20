@@ -91,7 +91,7 @@ def get_config(args: ParsedArgs) -> AppConfig:
     if config_input_path.exists():
         return AppConfig.load(config_input_path)
     # if no standard, use empty config
-    return AppConfig()
+    return AppConfig(None,None,None,{},{},{})
 
 def get_input_path(args: ParsedArgs, config: AppConfig):
     
