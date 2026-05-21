@@ -1,9 +1,10 @@
 import io
-from datetime import date
 from typing import Callable, Concatenate, Dict, List, TypeVar
 from segments import Segment
 
-FormatterProtocol = Callable[Concatenate[io.TextIOWrapper,Dict[date, List[Segment]],...],None]
+FormatterProtocol = Callable[Concatenate[io.TextIOWrapper,List[Segment],...],None]
+"""A function using FormatterProtocol takes in a text io stream and an iterable of segments that are sorted by the inTime field and outputs some text
+the function can also take in other options as keyword arguments."""
 
 
 _OUTPUT_REGISTRY: Dict[str, FormatterProtocol] = {}

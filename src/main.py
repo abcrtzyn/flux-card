@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
 import argparse
-from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, date # pyright: ignore[reportPrivateUsage]
 import os
 from pathlib import Path
-from typing import Iterator, List, Dict, Set, Tuple
+from typing import Iterable, Iterator, List, Set, Tuple
 from zoneinfo import ZoneInfo
 
 from config import AppConfig, MacroConfig, OutputConfig
@@ -287,18 +286,18 @@ def split_across_midnight(segment: Segment, tz: ZoneInfo):
     yield Segment(segment.job, current_start, segment.outTime, segment.description)
 
 
-def parse_segments(segments: Iterator[Tuple[Tuple[Path,int],List[str]]],output_timezone: ZoneInfo) -> Iterator[Segment]:
+def parse_segments(segments: Iterable[Tuple[Tuple[Path,int],List[str]]],output_timezone: ZoneInfo) -> Iterator[Segment]:
     for loc_info, lines in segments:
         segment = parse_timecard_segment(lines,loc_info,output_timezone)
         yield from split_across_midnight(segment,output_timezone)
 
-def job_filter_segments(segments: Iterator[Segment],job: Set[str] | None) -> Iterator[Segment]:
+def job_filter_segments(segments: Iterable[Segment],job: Set[str] | None) -> Iterator[Segment]:
     if job is None:
-        return segments
+        return iter(segments)
     
     return (s for s in segments if s.job in job)
 
-def date_filter_segments(segments: Iterator[Segment],start_date: date | None, end_date: date | None) -> Iterator[Segment]:
+def date_filter_segments(segments: Iterable[Segment],start_date: date | None, end_date: date | None) -> Iterator[Segment]:
     if start_date is None and end_date is None:
         yield from segments
     
@@ -308,21 +307,8 @@ def date_filter_segments(segments: Iterator[Segment],start_date: date | None, en
             yield s
 
 
-def group_segments_by_job_date(segments: Iterator[Segment]) -> Dict[str,Dict[date,List[Segment]]]:
-    groups: Dict[str,Dict[date,List[Segment]]] = defaultdict(lambda: defaultdict(list))
-    
-    for s in segments:
-        groups[s.job][s.inTime.date()].append(s)
-
-    return groups
-
-def group_segments_by_date(segments: Iterator[Segment]) -> Dict[date,List[Segment]]:
-    groups: Dict[date,List[Segment]] = defaultdict(list)
-    
-    for s in segments:
-        groups[s.inTime.date()].append(s)
-
-    return groups
+def sort_by_time(segments: Iterable[Segment]) -> List[Segment]:
+    return sorted(segments,key=lambda x: x.inTime)
 
 
 def main():
@@ -368,9 +354,9 @@ def main():
     # file ends properly, lets read some segments
     splits = read_segment_lines(input_path)
     segments = date_filter_segments(job_filter_segments(parse_segments(splits,output_timezone),job_filter),start_date,end_date)
-    data = group_segments_by_date(segments)
+    data = sort_by_time(segments)
 
-    for o in outputs:    
+    for o in outputs:
         o.execute_output(data)
 
 

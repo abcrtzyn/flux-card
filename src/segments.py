@@ -1,5 +1,5 @@
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 @dataclass
@@ -8,6 +8,8 @@ class Segment:
     inTime: datetime;
     outTime: datetime;
     description: str;
+    elapsed: timedelta = field(init=False)
+
+    def __post_init__(self):
+        self.elapsed = self.outTime-self.inTime
     
-    def elapsed(self) -> timedelta:
-        return self.outTime-self.inTime;

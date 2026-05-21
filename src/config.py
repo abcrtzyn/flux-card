@@ -300,8 +300,9 @@ class OutputConfig(ABC):
     format_function: FormatterProtocol
     kwargs: TomlTable
     
-    def execute_output(self, data: Dict[date, List[Segment]]) -> None:
-        """Runs the output formatter function"""
+    def execute_output(self, data: List[Segment]) -> None:
+        """Runs the output formatter function
+        Expects input data to be sorted by inTime"""
 
         with self.open_stream() as stream:
             self.format_function(stream,data,self.kwargs)
