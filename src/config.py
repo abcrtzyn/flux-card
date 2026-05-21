@@ -305,8 +305,8 @@ class OutputConfig(ABC):
         Expects input data to be sorted by inTime"""
 
         with self.open_stream() as stream:
-            self.format_function(stream,data,self.kwargs)
-
+            self.format_function(stream,data,**self.kwargs)
+            
 
     @abstractmethod
     @contextmanager
