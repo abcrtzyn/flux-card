@@ -7,15 +7,23 @@
 
 
 
-
 from io import TextIOWrapper
+from math import ceil
 from typing import List
 
 from output_registry import register_formatter
+from processors.conversion import time_to_seconds_of_day
 from processors.daterange import daterange
 from processors.grouping import group_by_date
 from processors.reductions import total
 from segments import Segment
+
+
+section_length = 3600 # one hour
+# section_length = 1800 # half hour
+# section_length = 900 # quarter hour
+
+sections_per_day = ceil(86400 / section_length)
 
 
 @register_formatter("visualization")
@@ -33,19 +41,28 @@ def summary(file: TextIOWrapper, data: List[Segment],fill_in: bool = True):
     for d in daterange(min_date,max_date):
         file.write(f'{d.strftime('%a, %b %d %Y')}: ')
         if d not in grouped:
-            file.write('░░░░░░░░░░░░░░░░░░░░░░░░ (Total: 0h)\n')
+            file.write(f'{'░'*sections_per_day} (Total: 0h)\n')
             continue
         # we have some data here
         segments = grouped[d]
 
-        # for each hour, determine if the block should be filled or not
-        hours_map = [False]*24
-        
+        # for each section, determine if the block should be filled or not
+        # we will be generous and go up to the nearest whole section.
+
+        day_map = [False] * sections_per_day
+
         for segment in segments:
-            hours_map[segment.inTime.hour:segment.outTime.hour+1] = [True]*(segment.outTime.hour-segment.inTime.hour+1)
+            intime = time_to_seconds_of_day(segment.inTime)
+            outtime = time_to_seconds_of_day(segment.outTime)
+
+            # light up any segments of day_map that include intime, outtime, or anywhere in between
+            in_segment = intime // section_length
+            out_segment = outtime // section_length + 1
+
+            day_map[in_segment:out_segment] = [True]*(out_segment-in_segment)
         
 
-        for c in hours_map:
+        for c in day_map:
             file.write(f'{'█' if c else '░'}')
 
         day_total = total(segments)
