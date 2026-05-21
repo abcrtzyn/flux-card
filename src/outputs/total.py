@@ -21,7 +21,7 @@ def format_timedelta(x: timedelta):
 
 
 @register_formatter("total")
-def print_total(file: TextIOWrapper, data: List[Segment], argument: str | None = None):
+def print_total(file: TextIOWrapper, data: List[Segment]):
     
     total_hours = total(data)
 
