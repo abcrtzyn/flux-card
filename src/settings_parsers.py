@@ -3,14 +3,14 @@ from argparse import Action, ArgumentError, ArgumentParser, Namespace
 from pathlib import Path
 from typing import Any, Sequence, cast
 
-from config import OutputConfig
+from config import parse_output_runner_from_args
 
 
 
 class OutputSettingsAction(Action):
     def __call__(self, parser: ArgumentParser, namespace: Namespace, values: str | Sequence[Any] | None, option_string: str | None=None):
         try:
-            oc = OutputConfig.from_args(values[0],values[1],Path('.'),{}) # pyright: ignore[reportUnknownArgumentType, reportOptionalSubscript]
+            oc = parse_output_runner_from_args(values[0],values[1],Path('.'),{}) # pyright: ignore[reportUnknownArgumentType, reportOptionalSubscript]
         except Exception as e:
             e.add_note('could not parse output flag because of the above error')
             raise e

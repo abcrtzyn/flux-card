@@ -3,22 +3,19 @@
 
 
 from abc import ABC, abstractmethod
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 import inspect
-from io import TextIOWrapper
 from math import floor
 from pathlib import Path
-import sys
 import tomllib
-from typing import Any, Callable, Dict, Generator, Iterable, Iterator, List, NoReturn, Sequence, Set, Tuple, TypeGuard, TypeVar, Union, cast
+from typing import Any, Callable, Dict, Iterable, Iterator, List, NoReturn, Sequence, Set, Tuple, TypeGuard, TypeVar, Union, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from error import FluxCardInputTypeError, FluxCardInputValueError
 from monads import Box, Maybe
-from output_registry import FormatterProtocol, get_formatter
-from segments import Segment
+from output_registry import get_formatter
+from output_runners import FileRunner, OutputRunner, StdoutRunner
 
 # Define the allowed scalar types from the TOML specification
 TomlScalar = Union[str, int, float, bool, datetime, date, time]
@@ -294,107 +291,69 @@ class JobConfig:
 
         return cls(schedule)
 
-@dataclass(frozen=True)
-class OutputConfig(ABC):
-    format_key: str 
-    format_function: FormatterProtocol
-    kwargs: TomlTable
+
+def parse_output_runner_from_dict(raw: TomlTable, config_path: Path) -> OutputRunner:
+    # output is required, otherwise, how would we know how to output?
+    try:
+        form = (
+            Box(raw.get('format'))
+            .map(lambda x: x if x is not None else raise_required_field_error('format'))
+            .map(lambda x: x if isinstance(x, str) else raise_type_error('format',type(x).__name__,'str'))
+            .unwrap()
+        )
+    except Exception as e:
+        e.add_note('at key format')
+        raise e
+    # remove the key from the dictionary
+    raw.pop('format')
+    try:
+        dest = Box(raw.get('dest','stdout')).map(lambda x: x if isinstance(x, str) else raise_type_error('dest',type(x).__name__,'str')).unwrap()
+    except Exception as e:
+        e.add_note('at key dest')
+        raise e
+    # remove the key from the dictionary
+    try:
+        raw.pop("dest")
+    except:
+        pass
+
+    # give these argument versions for actual parsing, along with the rest of the arguments as is.
+    return _parse_output_runner_common(dest,form,config_path,raw)
+
+def parse_output_runner_from_args(dest: str, form: str, config_path: Path, extra_kwargs: TomlTable) -> OutputRunner:
+    return _parse_output_runner_common(dest,form,config_path,extra_kwargs)
+
+
+def _parse_output_runner_common(dest: str, form: str, config_path: Path, extra_kwargs: TomlTable) -> OutputRunner:
+    # get the formatter
+    formatter = get_formatter(form)
+
+    # check the signiture
+    sig = inspect.signature(formatter)
+    # if the signiture has **kwargs in it, we don't check keys.
+    if not any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values()):
+        # check the given kwargs for invalid keys (keys not supported by the formatter)
+        invalid_keys = set(extra_kwargs.keys()) - set(sig.parameters.keys())
+        if invalid_keys:
+            raise FluxCardInputValueError(f'Format "{form}" received unsupported options: {', '.join(invalid_keys)}')
+    # we have passed the key check here
+
+    # destination can be None or stdout for stdout
+    if dest == "stdout":
+        return StdoutRunner(form,formatter,extra_kwargs)
+
+    dest_file_path = resolve_config_relative_path(dest, config_path)
     
-    def execute_output(self, data: List[Segment]) -> None:
-        """Runs the output formatter function
-        Expects input data to be sorted by inTime"""
-
-        with self.open_stream() as stream:
-            self.format_function(stream,data,**self.kwargs)
-            
-
-    @abstractmethod
-    @contextmanager
-    def open_stream(self) -> Generator[TextIOWrapper,None,None]: ...
-
-    @abstractmethod
-    def output_str(self) -> str: ...
-
-    @classmethod
-    def from_dict(cls, raw: TomlTable, config_path: Path) -> "OutputConfig":
-        # output is required, otherwise, how would we know how to output?
-        try:
-            form = (
-                Box(raw.get('format'))
-                .map(lambda x: x if x is not None else raise_required_field_error('format'))
-                .map(lambda x: x if isinstance(x, str) else raise_type_error('format',type(x).__name__,'str'))
-                .unwrap()
-            )
-        except Exception as e:
-            e.add_note('at key format')
-            raise e
-        # remove the key from the dictionary
-        raw.pop('format')
-        try:
-            dest = Box(raw.get('dest','stdout')).map(lambda x: x if isinstance(x, str) else raise_type_error('dest',type(x).__name__,'str')).unwrap()
-        except Exception as e:
-            e.add_note('at key dest')
-            raise e
-        # remove the key from the dictionary
-        try:
-            raw.pop("dest")
-        except:
-            pass
-
-        # give these argument versions for actual parsing, along with the rest of the arguments as is.
-        return OutputConfig.from_args(dest,form,config_path,raw)
-
-    @classmethod
-    def from_args(cls, dest: str, form: str, config_path: Path, extra_kwargs: TomlTable) -> "OutputConfig":
-        # get the formatter
-        formatter = get_formatter(form)
-
-        # check the signiture
-        sig = inspect.signature(formatter)
-        # if the signiture has **kwargs in it, we don't check keys.
-        if not any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values()):
-            # check the given kwargs for invalid keys (keys not supported by the formatter)
-            invalid_keys = set(extra_kwargs.keys()) - set(sig.parameters.keys())
-            if invalid_keys:
-                raise FluxCardInputValueError(f'Format "{form}" received unsupported options: {', '.join(invalid_keys)}')
-        # we have passed the key check here
-
-        # destination can be None or stdout for stdout
-        if dest == "stdout":
-            return StdoutConfig(form,formatter,extra_kwargs)
-
-        dest_file_path = resolve_config_relative_path(dest, config_path)
-        
-        return FileConfig(form,formatter,extra_kwargs,dest_file_path)
+    return FileRunner(form,formatter,extra_kwargs,dest_file_path)
 
 
-@dataclass(frozen=True)
-class StdoutConfig(OutputConfig):
 
-    @contextmanager
-    def open_stream(self) -> Generator[TextIOWrapper,None,None]:
-        yield cast(TextIOWrapper,sys.stdout)
-
-    def output_str(self) -> str:
-        return 'stdout'
-
-@dataclass(frozen=True)
-class FileConfig(OutputConfig):
-    file_path: Path
-
-    @contextmanager
-    def open_stream(self) -> Generator[TextIOWrapper,None,None]:
-        with self.file_path.open("w") as f:
-            yield f
-
-    def output_str(self) -> str:
-        return str(self.file_path)
 
 @dataclass(frozen=True)
 class MacroConfig:
     job_filter: Set[str] | None #= field(default=None)
     period: int | None #= field(default=None)
-    outputs: List[OutputConfig] #= cast(List[OutputConfig],field(default_factory=list))
+    output_runners: List[OutputRunner]
 
     @classmethod
     def from_dict(cls, raw: TomlTable, config_path: Path) -> "MacroConfig":
@@ -425,7 +384,7 @@ class MacroConfig:
             outputs = (
                 Box(raw.get('outputs',[]))
                 .map(lambda x: x if isinstance(x,list) else raise_type_error('outputs',type(x).__name__,'list'))
-                .map(list_for_each(with_key_note(lambda i: f'in output {i}',lambda i,x: OutputConfig.from_dict(x,config_path) if isinstance(x,dict) else raise_type_error(f'outputs.{i}',type(x).__name__,'dict'))))
+                .map(list_for_each(with_key_note(lambda i: f'in output {i}',lambda i,x: parse_output_runner_from_dict(x,config_path) if isinstance(x,dict) else raise_type_error(f'outputs.{i}',type(x).__name__,'dict'))))
                 .unwrap()
             )
         except Exception as e:

@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Iterable, Iterator, List, Set, Tuple
 from zoneinfo import ZoneInfo
 
-from config import AppConfig, MacroConfig, OutputConfig
+from config import AppConfig, MacroConfig
 from error import FluxCardInputError
 from output_registry import print_formatters
+from output_runners import OutputRunner
 from settings_parsers import JobFilterAction, OutputSettingsAction
 from segments import Segment
 
@@ -29,7 +30,7 @@ class ParsedArgs:
     start_date: date | None
     end_date: date | None
     period: int | None
-    output: OutputConfig | None
+    output: OutputRunner | None
     macro: str | None
     print_config: bool
     list_formats: bool
@@ -191,13 +192,13 @@ def get_date_filters(args: ParsedArgs, macro_config: MacroConfig | None, job_fil
     return start_date, end_date
 
 
-def get_outputs(args: ParsedArgs, macro_config: MacroConfig | None) -> List[OutputConfig]:
+def get_outputs(args: ParsedArgs, macro_config: MacroConfig | None) -> List[OutputRunner]:
     # if args.outputs
     if args.output is not None:
         return [args.output]
 
     if macro_config is not None:
-        return macro_config.outputs or []
+        return macro_config.output_runners or []
     
     return []
 
