@@ -2,20 +2,19 @@
 
 
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time
 import inspect
-from math import floor
 from pathlib import Path
 import tomllib
-from typing import Any, Callable, Dict, Iterable, Iterator, List, NoReturn, Sequence, Set, Tuple, TypeGuard, TypeVar, Union, cast
+from typing import Any, Callable, Dict, Iterable, List, NoReturn, Sequence, Set, TypeGuard, TypeVar, Union, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from error import FluxCardInputTypeError, FluxCardInputValueError
 from monads import Box, Maybe
 from output_registry import get_formatter
 from output_runners import FileRunner, OutputRunner, StdoutRunner
+from schedules import DaysCycleSchedule, ManualCycleSchedule, MonthCycleSchedule, Schedule
 
 # Define the allowed scalar types from the TOML specification
 TomlScalar = Union[str, int, float, bool, datetime, date, time]
@@ -29,16 +28,6 @@ TomlType = Union[
 TomlTable = Dict[str, TomlType]
 TomlArray = List[TomlType]
 
-
-
-
-T = TypeVar('T')
-
-### EVER NEED TO HAVE AN ENUMERATED LIST IN REVERSE?
-### USE MY FANCY FUNCTION
-def reverse_enumerate(sequence: list[T]) -> Iterator[Tuple[int, T]]:
-    """Yields (index, item) pairs backwards from the end of a list."""
-    return zip(range(len(sequence)-1, -1, -1), reversed(sequence))
 
 
 def is_list_dates(l: List[Any]) -> TypeGuard[List[date]]:
@@ -71,6 +60,7 @@ def raise_required_field_error(key: str) -> NoReturn:
 
 from typing import Callable, TypeVar, Any
 
+T = TypeVar("T")
 K = TypeVar("K")
 V = TypeVar("V")
 R = TypeVar("R")
@@ -116,159 +106,86 @@ def resolve_config_relative_path(raw_path: str, config_file: Path) -> Path:
     return (config_file.parent / p).resolve()
 
 
-@dataclass(frozen=True)
-class ScheduleConfig(ABC):
+def parse_schedule_from_dict(raw: TomlTable,manual_schedules_raw: TomlType|None) -> Schedule:
+    try:
+        schedule_type = (
+            Box(raw.get('type'))
+            .map(lambda x: x if x is not None else raise_required_field_error('type'))
+            .map(lambda x: x if isinstance(x,str) else raise_type_error('type',type(x).__name__,'str'))
+            .unwrap()
+        )
+    except Exception as e:
+        e.add_note('at key type')
+        raise e
+    
+    match schedule_type:
+        case 'days_cycle':
+            _parse_days_cycle_from_dict(raw)
+        case 'monthly':
+            _parse_month_cycle_from_dict(raw)
+        case 'manual':
+            _parse_manual_cycle(raw)
+        case _:
+            raise FluxCardInputValueError(f'Unknown schedule type {schedule_type} at key schedule')
+    
+    assert False, "unreachable"
 
-    @abstractmethod
-    def get_date_filter(self, period_offset: int) -> Tuple[date|None,date|None]: ...
+def _parse_days_cycle_from_dict(raw: TomlTable):
+    try:
+        anchor = (
+            Box(raw.get('period_anchor'))
+            .map(lambda x: x if x is not None else raise_required_field_error('period_anchor'))
+            .map(lambda x: x if isinstance(x,date) else raise_type_error('days_cycle',type(x).__name__,'date'))
+            .unwrap()
+        )
+    except Exception as e:
+        e.add_note('at key period_anchor')
+        raise e
 
-    @classmethod
-    def from_dict(cls, raw: TomlTable,manual_schedules_raw: TomlType|None) -> "ScheduleConfig":
-        try:
-            schedule_type = (
-                Box(raw.get('type'))
-                .map(lambda x: x if x is not None else raise_required_field_error('type'))
-                .map(lambda x: x if isinstance(x,str) else raise_type_error('type',type(x).__name__,'str'))
-                .unwrap()
-            )
-        except Exception as e:
-            e.add_note('at key type')
-            raise e
+    try:
+        length = (
+            Box(raw.get('period_length'))
+            .map(lambda x: x if x is not None else raise_required_field_error('period_length'))
+            .map(lambda x: x if isinstance(x,int) else raise_type_error('period_length',type(x).__name__,'int'))
+            .unwrap()
+        )
+    except Exception as e:
+        e.add_note('at key period_length')
+        raise e
+
+    return DaysCycleSchedule(anchor,length)
+
+def _parse_month_cycle_from_dict(raw: TomlTable) -> MonthCycleSchedule:
+    try:
+        start_day = (
+            Box(raw.get('start_day'))
+            .map(lambda x: x if x is not None else raise_required_field_error('start_day'))
+            .map(lambda x: x if isinstance(x,int) else raise_type_error('start_day',type(x).__name__,'int'))
+            .map(lambda x: x if (1 <= x <= 28) else raise_value_error('start_day',x,'a value between 1 and 28 inclusive'))
+            .unwrap()
+        )
+    except Exception as e:
+        e.add_note('at key start_day')
+        raise e
         
-        match schedule_type:
-            case 'days_cycle':
-                try:
-                    anchor = (
-                        Box(raw.get('period_anchor'))
-                        .map(lambda x: x if x is not None else raise_required_field_error('period_anchor'))
-                        .map(lambda x: x if isinstance(x,date) else raise_type_error('days_cycle',type(x).__name__,'date'))
-                        .unwrap()
-                    )
-                except Exception as e:
-                    e.add_note('at key period_anchor')
-                    raise e
-
-                try:
-                    length = (
-                        Box(raw.get('period_length'))
-                        .map(lambda x: x if x is not None else raise_required_field_error('period_length'))
-                        .map(lambda x: x if isinstance(x,int) else raise_type_error('period_length',type(x).__name__,'int'))
-                        .unwrap()
-                    )
-                except Exception as e:
-                    e.add_note('at key period_length')
-                    raise e
-
-                return DaysCycleConfig(anchor,length)
-            case 'monthly':
-                try:
-                    start_day = (
-                        Box(raw.get('start_day'))
-                        .map(lambda x: x if x is not None else raise_required_field_error('start_day'))
-                        .map(lambda x: x if isinstance(x,int) else raise_type_error('start_day',type(x).__name__,'int'))
-                        .map(lambda x: x if (1 <= x <= 28) else raise_value_error('start_day',x,'a value between 1 and 28 inclusive'))
-                        .unwrap()
-                    )
-                except Exception as e:
-                    e.add_note('at key start_day')
-                    raise e
-                    
-                return MonthCycleConfig(start_day)
-            case 'manual':
-                # have to go pick up the historical markers
-                markers = (
-                    Maybe(manual_schedules_raw)
-                    .map(lambda x: x if isinstance(x,dict) else raise_type_error('manual_schedule_history.[job_name]',type(x).__name__,'dict'))
-                    .map(lambda x: x.get('markers',[]))
-                    .map(lambda x: x if isinstance(x,list) else raise_type_error('markers',type(x).__name__,'list'))
-                    .map(lambda x: x if is_list_dates(x) else raise_type_error('markers',type(x).__name__,'list of dates'))
-                    .map(lambda x: x if is_date_list_sorted(x) else raise_value_error('markers',x,'the list to be sorted'))
-                    .unwrap_or(list)
-                )
-                
-                return ManualCycleConfig(markers)
-            case _:
-                raise FluxCardInputValueError(f'Unknown schedule type {schedule_type} at key schedule')
-        
-        assert False, "unreachable"
+    return MonthCycleSchedule(start_day)
 
 
-@dataclass(frozen=True)
-class DaysCycleConfig(ScheduleConfig):
-    period_anchor: date
-    period_length: int
-
-    def get_date_filter(self, period_offset: int) -> Tuple[date, date]:
-        # how many days since the anchor (can be negative)
-        days_since_anchor = (date.today() - self.period_anchor).days
-        # which period is today a part of?
-        current_period_index = floor(days_since_anchor / self.period_length)
-        # offset index by the user's input (0 current, 1 previous, so on)
-        target_period_index = current_period_index - period_offset
-        # shift that many days from the anchor
-        start_date = self.period_anchor + timedelta(days=target_period_index*self.period_length)
-        end_date = start_date + timedelta(days=self.period_length)
-        return (start_date, end_date)
-        
-
-@dataclass(frozen=True)
-class MonthCycleConfig(ScheduleConfig):
-    # a day between 1 to 28 that marks the beginning of the pay period.
-    start_day: int
-
-    def get_date_filter(self, period_offset: int) -> Tuple[date, date]:
-        today = date.today()
-        # using year*12 + (month-1) as a easy way to calulate month based stuff.
-        # Jan of 2026 would be 24312, Feb of 2026 would be 24313
-
-        # getting the current month index
-        # also, if the day of the period hasn't past yet, we are in previous month's period
-        current_index = today.year * 12 + (today.month - 1) - (today.day < self.start_day)
-        # this will get the month that we are asking for
-        period_index = current_index - period_offset
-        # convert back to year and month for this month
-        period_start_year, period_start_month = divmod(period_index,12)
-        period_start_month += 1
-        # and next month
-        period_end_year, period_end_month = divmod(period_index+1,12)
-        period_end_month += 1
-        # and figure out the start date and end date
-        start_date = date(period_start_year, period_start_month, self.start_day)
-        end_date = date(period_end_year, period_end_month, self.start_day)
-        
-        return (start_date, end_date)
+def _parse_manual_cycle(manual_schedules_raw: TomlType | None):
+    # have to go pick up the historical markers
+    markers = (
+        Maybe(manual_schedules_raw)
+        .map(lambda x: x if isinstance(x,dict) else raise_type_error('manual_schedule_history.[job_name]',type(x).__name__,'dict'))
+        .map(lambda x: x.get('markers',[]))
+        .map(lambda x: x if isinstance(x,list) else raise_type_error('markers',type(x).__name__,'list'))
+        .map(lambda x: x if is_list_dates(x) else raise_type_error('markers',type(x).__name__,'list of dates'))
+        .map(lambda x: x if is_date_list_sorted(x) else raise_value_error('markers',x,'the list to be sorted'))
+        .unwrap_or(list)
+    )
+    
+    return ManualCycleSchedule(markers)
 
 
-
-@dataclass(frozen=True)
-class ManualCycleConfig(ScheduleConfig):
-    markers: List[date]
-
-    def get_date_filter(self, period_offset: int) -> Tuple[date | None, date | None]:
-        today = date.today()
-        len_markers = len(self.markers)
-
-        # starting at the end
-        # looking for the first marker less than or equal to today
-        for i, marker in reverse_enumerate(self.markers):
-            if marker <= today:
-                current_end_index = i+1
-                break
-        else:
-            current_end_index = 0
-        # current_end_index is the list index of the end date of the current period
-
-        # period_end_index is the list index of the end date of the target period
-        period_end_index = current_end_index - period_offset
-
-        if period_end_index < 0 or period_end_index > len_markers:
-            raise_value_error('period',period_offset,f'a value between {current_end_index} and {current_end_index-len_markers} for this manual schedule')
-            # raise FluxCardInputValueError(f'invalid period {period_offset} in this manual schedule, the past most period is {current_end_index}, the future most period is {current_end_index-len_markers}')
-
-        start_date = None if period_end_index == 0 else self.markers[period_end_index-1]
-        end_date = None if period_end_index == len_markers else self.markers[period_end_index]
-
-        return (start_date,end_date)
 
 
 @dataclass(frozen=True)
@@ -399,7 +316,7 @@ class AppConfig:
     timecard_path: Path | None # = field(default=None)
     output_timezone: ZoneInfo | None # = field(default=None)
     default_job: str | None # = field(default=None)
-    schedules: Dict[str,ScheduleConfig] # = cast(Dict[str, ScheduleConfig],field(default_factory=dict))
+    schedules: Dict[str,Schedule] # = cast(Dict[str, ScheduleConfig],field(default_factory=dict))
     jobs: Dict[str, JobConfig] # = cast(Dict[str, JobConfig],field(default_factory=dict))
     macros: Dict[str, MacroConfig] # = cast(Dict[str, MacroConfig], field(default_factory=dict))
     
@@ -455,7 +372,7 @@ class AppConfig:
             schedules = (
                 Maybe(raw.get('schedules'))
                 .map(lambda x: x if isinstance(x,dict) else raise_type_error('schedules',type(x).__name__,'dict'))
-                .map(dict_for_each(with_key_note(lambda k: f'in schedule {k}',lambda k,v: (ScheduleConfig.from_dict(v,manual_schedules.get(k)) if isinstance(v,dict) else raise_type_error(f'schedules.{k}',type(v).__name__,'dict')))))
+                .map(dict_for_each(with_key_note(lambda k: f'in schedule {k}',lambda k,v: (parse_schedule_from_dict(v,manual_schedules.get(k)) if isinstance(v,dict) else raise_type_error(f'schedules.{k}',type(v).__name__,'dict')))))
                 .unwrap_or(dict)
             )
         except Exception as e:
