@@ -1,19 +1,11 @@
-from datetime import timedelta
 from io import TextIOWrapper
 from typing import List
 
 from output_registry import register_formatter
+from processors.formaters import timedelta_HH_mm_ss
 from processors.grouping import group_by_date
 from processors.reductions import total
 from segments import Segment
-
-def format_timedelta(x: timedelta):
-    "Quick function for formatting a timedelta"
-    s = int(x.total_seconds())
-    hr,s = divmod(s,3600)
-    mn,s = divmod(s,60)
-
-    return f"{hr}:{mn:02}:{s:02}"
 
 
 @register_formatter("card")
@@ -38,4 +30,4 @@ def output_card(file: TextIOWrapper, data: List[Segment]):
             file.write(f"\t{seg.inTime.strftime('%-I:%M %p')}\t{seg.outTime.strftime('%-I:%M %p')}\t{str(seg.elapsed)}\n")
             
     file.write(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-    file.write(f"Total\t\t\t{format_timedelta(total_hours)}\n\n\n")
+    file.write(f"Total\t\t\t{timedelta_HH_mm_ss(total_hours)}\n\n\n")
