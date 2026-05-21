@@ -9,6 +9,6 @@ from segments import Segment
 @register_formatter("csv")
 def output_csv(file: TextIOWrapper, data: List[Segment],job_column: bool = True):
     
-    file.write(f'{'job,' if job_column else ''}date,in,out,description\n')
-
+    file.write(f'date,in,out,{'job,' if job_column else ''}description\n')
+    
     # print(data)
