@@ -127,7 +127,7 @@ On the command line, all of `-j name`, `-j name1,name2` or `-j "name1, name2"` a
 
 #### Period Mode
 
-Read more about using period mode in the [period mode section](#period-mode). This must be an integer value.
+Read more about using period mode in the [period mode section](#period-mode-1). This must be an integer value.
 
 - **CLI**: `-p [index]` or `--period [index]`
 - **Macros**: `period = 1`
