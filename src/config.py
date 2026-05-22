@@ -120,11 +120,11 @@ def parse_schedule_from_dict(raw: TomlTable,manual_schedules_raw: TomlType|None)
     
     match schedule_type:
         case 'days_cycle':
-            _parse_days_cycle_from_dict(raw)
+            return _parse_days_cycle_from_dict(raw)
         case 'monthly':
-            _parse_month_cycle_from_dict(raw)
+            return _parse_month_cycle_from_dict(raw)
         case 'manual':
-            _parse_manual_cycle(raw)
+            return _parse_manual_cycle(raw)
         case _:
             raise FluxCardInputValueError(f'Unknown schedule type {schedule_type} at key schedule')
     
