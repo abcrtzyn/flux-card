@@ -12,7 +12,7 @@ from config import AppConfig, MacroConfig
 from error import FluxCardCommandLineError, FluxCardError, FluxCardInputError, print_terminal_error
 from output_registry import print_formatters
 from output_runners import OutputRunner
-from settings_parsers import JobFilterAction, OutputSettingsAction
+from settings_parsers import JobFilterAction, OutputSettingsAction, TimezoneAction
 from segments import Segment
 
 # this loads all the output formats into the registry
@@ -43,7 +43,7 @@ def parse_args() -> ParsedArgs:
     parser = FluxCardArgumentParser(prog="fluxcard",description="Summarize clock in sessions from the input file.\nUses settings from command line and config.toml")
 
     parser.add_argument("-i", "--input", dest="timecard_path", type=lambda x: Path(x) if x else None, help="Path to input file")
-    parser.add_argument("-tz", "--timezone", dest="output_timezone", type=ZoneInfo, help="timezone to format output")
+    parser.add_argument("-tz", "--timezone", dest="output_timezone", action=TimezoneAction, help="timezone to format output")
     parser.add_argument("-c","--config",dest="alt_config", type=lambda x: Path(x) if x else None, help="Alternate config file path")
     parser.add_argument("-j","--job",dest="job_filter",action=JobFilterAction,help='Job(s) to filter by seperated by comma "WebDev,Gardening". Clear filter set by config with "_". One job is required in period mode')
 
