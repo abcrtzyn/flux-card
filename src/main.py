@@ -9,7 +9,7 @@ from typing import Iterable, Iterator, List, Set, Tuple
 from zoneinfo import ZoneInfo
 
 from config import AppConfig, MacroConfig
-from error import FluxCardInputError
+from error import FluxCardCommandLineError, FluxCardError, FluxCardInputError, print_terminal_error
 from output_registry import print_formatters
 from output_runners import OutputRunner
 from settings_parsers import JobFilterAction, OutputSettingsAction
@@ -20,6 +20,10 @@ import outputs  # pyright: ignore[reportUnusedImport]
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+class FluxCardArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str):
+        raise FluxCardCommandLineError(f"{message}")
 
 @dataclass
 class ParsedArgs:
@@ -36,7 +40,7 @@ class ParsedArgs:
     list_formats: bool
 
 def parse_args() -> ParsedArgs:
-    parser = argparse.ArgumentParser(prog="fluxcard",description="Summarize clock in sessions from the input file.\nUses settings from command line and config.toml")
+    parser = FluxCardArgumentParser(prog="fluxcard",description="Summarize clock in sessions from the input file.\nUses settings from command line and config.toml")
 
     parser.add_argument("-i", "--input", dest="timecard_path", type=lambda x: Path(x) if x else None, help="Path to input file")
     parser.add_argument("-tz", "--timezone", dest="output_timezone", type=ZoneInfo, help="timezone to format output")
@@ -327,16 +331,10 @@ def main():
         job_filter = get_job_filter(args, macro_config, config)
         start_date, end_date = get_date_filters(args, macro_config, job_filter, config)
         outputs = get_outputs(args, macro_config)
-    except FluxCardInputError as e:
-        raise e
-        # print(e, file=sys.stderr)
-        # exit(1)
-    except Exception as e:
-        e.add_note('this should probably be added as a FluxCardInputError')
-        raise e
-    except SystemExit:
-        raise
-
+    except FluxCardError as e:
+        print_terminal_error(e)
+        exit(1)
+        
     if args.print_config:
         print('using the following settings')
         print('input file:', input_path)

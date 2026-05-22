@@ -4,7 +4,9 @@ from datetime import date, timedelta
 from math import floor
 from typing import Iterator, List, Tuple, TypeVar
 
-from error import FluxCardInputValueError
+from error import FluxCardInputError
+
+
 
 
 T = TypeVar('T')
@@ -92,8 +94,7 @@ class ManualCycleSchedule(Schedule):
         period_end_index = current_end_index - period_offset
 
         if period_end_index < 0 or period_end_index > len_markers:
-            raise FluxCardInputValueError('period',period_offset,f'a value between {current_end_index} and {current_end_index-len_markers} for this manual schedule')
-            # raise FluxCardInputValueError(f'invalid period {period_offset} in this manual schedule, the past most period is {current_end_index}, the future most period is {current_end_index-len_markers}')
+            raise FluxCardInputError('period',period_offset,f'a value between {current_end_index} and {current_end_index-len_markers} for this manual schedule')
 
         start_date = None if period_end_index == 0 else self.markers[period_end_index-1]
         end_date = None if period_end_index == len_markers else self.markers[period_end_index]

@@ -10,7 +10,8 @@ import tomllib
 from typing import Any, Callable, Dict, Iterable, List, NoReturn, Sequence, Set, TypeGuard, TypeVar, Union, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from error import FluxCardInputTypeError, FluxCardInputValueError
+
+from error import FluxCardConfigFieldRequiredError, FluxCardConfigTypeError, FluxCardConfigValueError
 from monads import Box, Maybe
 from output_registry import get_formatter
 from output_runners import FileRunner, OutputRunner, StdoutRunner
@@ -50,13 +51,13 @@ def is_date_list_sorted(l: Sequence[date]) -> bool:
 
 
 def raise_type_error(key: str, got_type: str, expected_type: str, more_info: str = '') -> NoReturn:
-    raise FluxCardInputTypeError(f'type error at {key}, expected type {expected_type}, but got type {got_type}{f'\n{more_info}' if more_info else ''}')
+    raise FluxCardConfigTypeError(f'type error at {key}, expected type {expected_type}, but got type {got_type}{f'\n{more_info}' if more_info else ''}')
 
 def raise_value_error(key: str, value: Any, error: str) -> NoReturn:
-    raise FluxCardInputValueError(f'value error at {key}, expected {error}, but got {value}')
+    raise FluxCardConfigValueError(f'value error at {key}, expected {error}, but got {value}')
 
 def raise_required_field_error(key: str) -> NoReturn:
-    raise FluxCardInputValueError(f'{key} field required')
+    raise FluxCardConfigFieldRequiredError(f'{key} field required')
 
 from typing import Callable, TypeVar, Any
 
@@ -115,7 +116,7 @@ def parse_schedule_from_dict(raw: TomlTable,manual_schedules_raw: TomlType|None)
             .unwrap()
         )
     except Exception as e:
-        e.add_note('at key type')
+        e.add_note('key type')
         raise e
     
     match schedule_type:
@@ -126,7 +127,7 @@ def parse_schedule_from_dict(raw: TomlTable,manual_schedules_raw: TomlType|None)
         case 'manual':
             return _parse_manual_cycle(raw)
         case _:
-            raise FluxCardInputValueError(f'Unknown schedule type {schedule_type} at key schedule')
+            raise FluxCardConfigValueError(f'Unknown schedule type {schedule_type} at key schedule')
     
     assert False, "unreachable"
 
@@ -139,7 +140,7 @@ def _parse_days_cycle_from_dict(raw: TomlTable):
             .unwrap()
         )
     except Exception as e:
-        e.add_note('at key period_anchor')
+        e.add_note('key period_anchor')
         raise e
 
     try:
@@ -150,7 +151,7 @@ def _parse_days_cycle_from_dict(raw: TomlTable):
             .unwrap()
         )
     except Exception as e:
-        e.add_note('at key period_length')
+        e.add_note('key period_length')
         raise e
 
     return DaysCycleSchedule(anchor,length)
@@ -165,7 +166,7 @@ def _parse_month_cycle_from_dict(raw: TomlTable) -> MonthCycleSchedule:
             .unwrap()
         )
     except Exception as e:
-        e.add_note('at key start_day')
+        e.add_note('key start_day')
         raise e
         
     return MonthCycleSchedule(start_day)
@@ -203,7 +204,7 @@ class JobConfig:
                 .unwrap()
             )
         except Exception as e:
-            e.add_note('at key schedule')
+            e.add_note('key schedule')
             raise e
 
         return cls(schedule)
@@ -219,14 +220,14 @@ def parse_output_runner_from_dict(raw: TomlTable, config_path: Path) -> OutputRu
             .unwrap()
         )
     except Exception as e:
-        e.add_note('at key format')
+        e.add_note('key format')
         raise e
     # remove the key from the dictionary
     raw.pop('format')
     try:
         dest = Box(raw.get('dest','stdout')).map(lambda x: x if isinstance(x, str) else raise_type_error('dest',type(x).__name__,'str')).unwrap()
     except Exception as e:
-        e.add_note('at key dest')
+        e.add_note('key dest')
         raise e
     # remove the key from the dictionary
     try:
@@ -252,7 +253,7 @@ def _parse_output_runner_common(dest: str, form: str, config_path: Path, extra_k
         # check the given kwargs for invalid keys (keys not supported by the formatter)
         invalid_keys = set(extra_kwargs.keys()) - set(sig.parameters.keys())
         if invalid_keys:
-            raise FluxCardInputValueError(f'Format "{form}" received unsupported options: {', '.join(invalid_keys)}')
+            raise FluxCardConfigValueError(f'Format "{form}" received unsupported options: {', '.join(invalid_keys)}')
     # we have passed the key check here
 
     # destination can be None or stdout for stdout
@@ -284,7 +285,7 @@ class MacroConfig:
                 .unwrap()
             )
         except Exception as e:
-            e.add_note('at key job_filter')
+            e.add_note('key job_filter')
             raise e
 
         try:
@@ -294,18 +295,18 @@ class MacroConfig:
                 .unwrap()
             )
         except Exception as e:
-            e.add_note('at key period')
+            e.add_note('key period')
             raise e
 
         try:
             outputs = (
                 Box(raw.get('outputs',[]))
                 .map(lambda x: x if isinstance(x,list) else raise_type_error('outputs',type(x).__name__,'list'))
-                .map(list_for_each(with_key_note(lambda i: f'in output {i}',lambda i,x: parse_output_runner_from_dict(x,config_path) if isinstance(x,dict) else raise_type_error(f'outputs.{i}',type(x).__name__,'dict'))))
+                .map(list_for_each(with_key_note(lambda i: f'output {i}',lambda i,x: parse_output_runner_from_dict(x,config_path) if isinstance(x,dict) else raise_type_error(f'outputs.{i}',type(x).__name__,'dict'))))
                 .unwrap()
             )
         except Exception as e:
-            e.add_note('at key outputs')
+            e.add_note('key outputs')
             raise e
 
         return cls(job_filter,period,outputs)
@@ -330,7 +331,7 @@ class AppConfig:
                 .unwrap()
             )
         except Exception as e:
-            e.add_note('at key timecard_path')
+            e.add_note('key timecard_path')
             raise e
 
         try:
@@ -341,11 +342,11 @@ class AppConfig:
                 .unwrap()
             )
         except (ValueError, ZoneInfoNotFoundError) as e:
-            e.add_note('at key output_timezone')
-            raise FluxCardInputValueError(e)
+            e.add_note('key output_timezone')
+            raise FluxCardConfigValueError(e)
             
         except Exception as e:
-            e.add_note('at key output_timezone')
+            e.add_note('key output_timezone')
             raise e
 
         try:
@@ -355,7 +356,7 @@ class AppConfig:
                 .unwrap()
             )
         except Exception as e:
-            e.add_note('at key default_job')
+            e.add_note('key default_job')
             raise e
 
         try:
@@ -365,18 +366,18 @@ class AppConfig:
                 .unwrap_or(dict)
             )
         except Exception as e:
-            e.add_note('at table manual_schedule_history')
+            e.add_note('table manual_schedule_history')
             raise e
 
         try:
             schedules = (
                 Maybe(raw.get('schedules'))
                 .map(lambda x: x if isinstance(x,dict) else raise_type_error('schedules',type(x).__name__,'dict'))
-                .map(dict_for_each(with_key_note(lambda k: f'in schedule {k}',lambda k,v: (parse_schedule_from_dict(v,manual_schedules.get(k)) if isinstance(v,dict) else raise_type_error(f'schedules.{k}',type(v).__name__,'dict')))))
+                .map(dict_for_each(with_key_note(lambda k: f'schedule {k}',lambda k,v: (parse_schedule_from_dict(v,manual_schedules.get(k)) if isinstance(v,dict) else raise_type_error(f'schedules.{k}',type(v).__name__,'dict')))))
                 .unwrap_or(dict)
             )
         except Exception as e:
-            e.add_note('at table schedules')
+            e.add_note('table schedules')
             raise e
         
         schedule_keys = schedules.keys()
@@ -385,22 +386,22 @@ class AppConfig:
             jobs = (
                 Maybe(raw.get('jobs'))
                 .map(lambda x: x if isinstance(x,dict) else raise_type_error('jobs',type(x).__name__,'dict'))
-                .map(dict_for_each(with_key_note(lambda k: f'in job {k}',lambda k,v: (JobConfig.from_dict(v,schedule_keys) if isinstance(v,dict) else raise_type_error(f'jobs.{k}',type(v).__name__,'dict')))))
+                .map(dict_for_each(with_key_note(lambda k: f'job {k}',lambda k,v: (JobConfig.from_dict(v,schedule_keys) if isinstance(v,dict) else raise_type_error(f'jobs.{k}',type(v).__name__,'dict')))))
                 .unwrap_or(dict)
             )
         except Exception as e:
-            e.add_note('at table jobs')
+            e.add_note('table jobs')
             raise e
 
         try:
             macros = (
                 Maybe(raw.get('macros'))
                 .map(lambda x: x if isinstance(x,dict) else raise_type_error('macros',type(x).__name__,'dict'))
-                .map(dict_for_each(with_key_note(lambda k: f'in macro {k}',lambda k,v: (MacroConfig.from_dict(v,config_path) if isinstance(v,dict) else raise_type_error(f'macros.{k}',type(v).__name__,'dict')))))
+                .map(dict_for_each(with_key_note(lambda k: f'macro {k}',lambda k,v: (MacroConfig.from_dict(v,config_path) if isinstance(v,dict) else raise_type_error(f'macros.{k}',type(v).__name__,'dict')))))
                 .unwrap_or(dict)
             )
         except Exception as e:
-            e.add_note('at key macros')
+            e.add_note('table macros')
             raise e
 
 
@@ -417,7 +418,13 @@ class AppConfig:
     def load(cls, path: Path) -> "AppConfig":
         with path.open("rb") as f:
             raw = cast(TomlTable,tomllib.load(f))
-        return cls.from_dict(raw, path)
+        try:
+            return cls.from_dict(raw, path)
+        except Exception as e:
+            e.add_note(f'File {str(path)}')
+            raise e
+        
+        assert False, 'unreachable'
 
     def job_config(self, job_name: str | None) -> JobConfig:
         if job_name is None:
