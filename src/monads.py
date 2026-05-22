@@ -14,12 +14,6 @@ class Maybe(Generic[T]):
             return Maybe[U](None)
         return Maybe[U](func(self._value))
 
-    def validate(self, validator: Callable[[T], None]) -> "Maybe[T]":
-        """Runs a validation hook that will throw if invariants are breached."""
-        if self._value is not None:
-            validator(self._value)
-        return self
-
     def unwrap(self) -> T | None:
         """Returns the inner value or None."""
         return self._value
