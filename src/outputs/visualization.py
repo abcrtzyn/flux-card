@@ -66,10 +66,8 @@ def summary(file: TextIOWrapper, data: List[Segment],fill_in: bool = True):
 
             day_map[in_segment:out_segment] = [True]*(out_segment-in_segment)
         
-
-        for c in day_map:
-            file.write(f'{'█' if c else '░'}')
+        map_string = ''.join('█' if c else '░' for c in day_map)
 
         day_total = total(segments)
 
-        file.write(f' (Total: {day_total.total_seconds()/3600:.2f}h)\n')
+        file.write(f'{map_string} (Total: {day_total.total_seconds()/3600:.2f}h)\n')
