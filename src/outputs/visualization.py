@@ -37,14 +37,18 @@ def summary(file: TextIOWrapper, data: List[Segment],fill_in: bool = True):
     # Get the last key (Maximum Date)
     max_date = next(reversed(grouped))
     
+    date_set = daterange(min_date,max_date) if fill_in else grouped
 
-    for d in daterange(min_date,max_date):
+    for d in date_set:
         file.write(f'{d.strftime('%a, %b %d %Y')}: ')
-        if d not in grouped:
+        if fill_in and d not in grouped:
+            # if we are in fill_in mode and the date doesn't have data, skip it.
             file.write(f'{'░'*sections_per_day} (Total: 0h)\n')
             continue
         # we have some data here
         segments = grouped[d]
+
+        # do some processing with it
 
         # for each section, determine if the block should be filled or not
         # we will be generous and go up to the nearest whole section.
@@ -57,7 +61,8 @@ def summary(file: TextIOWrapper, data: List[Segment],fill_in: bool = True):
 
             # light up any segments of day_map that include intime, outtime, or anywhere in between
             in_segment = intime // section_length
-            out_segment = outtime // section_length + 1
+            # ceiling division, to deal with edge cases
+            out_segment = (outtime + section_length - 1) // section_length
 
             day_map[in_segment:out_segment] = [True]*(out_segment-in_segment)
         
@@ -68,4 +73,3 @@ def summary(file: TextIOWrapper, data: List[Segment],fill_in: bool = True):
         day_total = total(segments)
 
         file.write(f' (Total: {day_total.total_seconds()/3600:.2f}h)\n')
-
