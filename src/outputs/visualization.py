@@ -27,7 +27,7 @@ sections_per_day = ceil(86400 / section_length)
 
 
 @register_formatter("visualization")
-def summary(file: TextIOWrapper, data: List[Segment],fill_in: bool = True):
+def render_visualization(file: TextIOWrapper, data: List[Segment],fill_in: bool = True, use_filter_dates: bool = True):
     
     grouped = group_by_date(data)
 
