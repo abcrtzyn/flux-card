@@ -1,0 +1,29 @@
+
+- change where I look for config files
+    search path 
+    alt config on command line, 
+    cwd, 
+    then maybe user .config
+- document that
+
+- change setup instructions, set up your own folder where ever you want it, with your own config file
+
+- config option custom output format, `output_plugins` list of strings specified in config
+    attempt to find these files and import them, that will register the functions
+    make sure that macros are parsed after this step so that output format keys are not read. 
+    !!!! Also command line output format keys must not be handled before this
+- document that, how to exactly set up the function to work with the system
+- program created paramaters
+    - test with visualization function and date filter parameters
+    - need to wire those parameters through the execute output function
+    - then check if the function actually needs them, should we inspect again on run or have the parsing check inspect figure this out?
+- document that, show that these optional parameters are allowed by custom functions
+- grouped by pay period summary output format and its requirements
+    - Implementation wise, how should this data be grouped, what pay period function is needed?
+    - Implement that function for each schedule
+    - Pass the schedule object or just that function into the output?
+    - Create a command pay period grouping function (probably)
+    - make the output format
+
+Anytime in here too
+- add documentation on the already implemented function formats and their options.
