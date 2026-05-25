@@ -1,11 +1,3 @@
-
-- change where I look for config files
-    search path 
-    alt config on command line, 
-    cwd, 
-    then maybe user .config
-- document that
-
 - change setup instructions, set up your own folder where ever you want it, with your own config file
 
 - config option custom output format, `output_plugins` list of strings specified in config

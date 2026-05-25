@@ -90,10 +90,12 @@ def get_config(args: ParsedArgs) -> AppConfig:
         if not alt_config_path.exists():
             raise FluxCardInputError(f'config file at "{alt_config_path}" does not exist')
         return AppConfig.load(alt_config_path)
-    # if no alternate, use the standard config file
-    config_input_path = REPO_ROOT / "config.toml"
+    # check cwd for config file
+    config_input_path = Path.cwd() / "config.toml"
     if config_input_path.exists():
         return AppConfig.load(config_input_path)
+    # can also check places like ~/.config/fluxcard or repo root
+    
     # if no standard, use empty config
     return AppConfig(None,None,None,{},{},{})
 

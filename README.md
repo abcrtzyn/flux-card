@@ -33,7 +33,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
 ```
-5. Create `config.toml` and set your default parameters here, such as the location of the Clock file with respect to the config file (repo root) or an absolute path and output timezone.
+5. Create `config.toml` in your working folder and set your default parameters here, such as the location of the Clock file with respect to the config file or an absolute path and output timezone.
 6. Run the program using one of the following
 ```sh
 fluxcard # if you have set up the python environment
@@ -50,7 +50,7 @@ This section goes through details of all parameters that can be set on the comma
 
 | Option            | CLI Flag         | Config Key        | Default / Action on not set |
 | :---              | :---             | :---              | :---                        |
-| **Alt Config**    | `-c [path]`      |                   | \<repo root\>/config.toml   |
+| **Alt Config**    | `-c [path]`      |                   | <cwd>/config.toml           |
 | **Start Date**    | `[param 1]`      |                   | No minimum filter applied   |
 | **End Date**      | `[param 2]`      |                   | No maximum filter applied   |
 | **Print Config**  | `--print-config` |                   | Program runs in full        |
