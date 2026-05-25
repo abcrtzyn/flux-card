@@ -134,10 +134,10 @@ Read more about using period mode in the [period mode section](#period-mode-1). 
 
 #### Output
 
-Tell the program to output to a destination (stdout or file path) with a given format function. `dest` can be `stdout` or a file path. When specifying in a macro, `dest` can be left out to select `stdout` or specified explicitly. Many output formats are supported, and you can propose or create your own. See [output formats](#output-formats). The command line only allows one output flag, macros allow for multiple outputs at once.
+Tell the program to output to a destination (stdout or file path) with a given format function. `dest` can be `stdout` or a file path. When specifying in a macro, `dest` can be left out to select `stdout` or specified explicitly. Many output formats are supported, and you can propose or create your own. See [output formats](#output-formats). The command line only allows one output flag, macros allow for multiple outputs at once. Many output formats also have options to customize the output, these can vary from format to format. I've used `param` as an example below. Currently output specific params are not allowed on the command line.
 
 - **CLI**: `-o [dest] [format]` or `--output [dest] [format]` (dest file path absolute or relative to cwd)
-- **Macros**: `outputs = [{dest="path/to/file.txt",format="form"}]` (dest file path absolute or relative to config file directory)
+- **Macros**: `outputs = [{dest="path/to/file.txt",format="form",param=true}]` (dest file path absolute or relative to config file directory)
 
 #### Macros example
 
