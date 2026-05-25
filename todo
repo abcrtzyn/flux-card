@@ -1,5 +1,3 @@
-- change setup instructions, set up your own folder where ever you want it, with your own config file
-
 - config option custom output format, `output_plugins` list of strings specified in config
     attempt to find these files and import them, that will register the functions
     make sure that macros are parsed after this step so that output format keys are not read. 
