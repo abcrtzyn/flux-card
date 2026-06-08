@@ -4,8 +4,10 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime, time
+from importlib.util import module_from_spec, spec_from_file_location
 import inspect
 from pathlib import Path
+import sys
 import tomllib
 from typing import Any, Callable, Dict, Iterable, List, NoReturn, Sequence, Set, TypeGuard, TypeVar, Union, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -309,6 +311,34 @@ class MacroConfig:
             raise e
 
         return cls(job_filter,period,outputs)
+    
+
+def load_plugin(path: str, index: int, config_path: Path) -> None:
+    file_path = resolve_config_relative_path(path, config_path)
+
+    if not file_path.exists():
+        raise FluxCardConfigValueError(f'unknown file path {file_path}')
+
+    # using an index value to make sure that modules are uniquely named
+    module_name = f"_dynamic_plugin_{file_path.stem}_{index}"
+
+    try:
+        spec = spec_from_file_location(module_name, str(file_path))
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Could not load specifications for: {file_path}")
+
+        module = module_from_spec(spec)
+        sys.modules[module_name] = module
+
+        # run the module
+        spec.loader.exec_module(module)
+
+    finally:
+        # this removes it from sys.modules because we don't need it to be there.
+        if module_name in sys.modules:
+            del sys.modules[module_name]
+
+
 
 
 @dataclass(frozen=True)
@@ -322,6 +352,21 @@ class AppConfig:
     
     @classmethod
     def from_dict(cls, raw: TomlTable, config_path: Path) -> "AppConfig":
+        
+        # step one, load the plugins
+        try:
+            (
+                Maybe(raw.get('output_plugins'))
+                .map(lambda x: x if isinstance(x,list) else raise_type_error('output_plugins',type(x).__name__,'list'))
+                .map(list_for_each(with_key_note(lambda i: f'output plugin {i}',lambda i,x: load_plugin(x,i,config_path) if isinstance(x,str) else raise_type_error(f'output_plugins.{i}',type(x).__name__,'str'))))
+                .unwrap()
+            )
+        except Exception as e:
+            e.add_note('key output_plugins')
+            raise e
+
+        # step two, do everything else
+
         try:
             timecard_path = (
                 Maybe(raw.get('timecard_path'))

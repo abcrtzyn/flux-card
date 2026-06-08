@@ -1,7 +1,4 @@
-- config option custom output format, `output_plugins` list of strings specified in config
-    attempt to find these files and import them, that will register the functions
-    make sure that macros are parsed after this step so that output format keys are not read. 
-    !!!! Also command line output format keys must not be handled before this
+- late command line parsing, maybe just for output format flags, but probably for all keys except alt config. At least output flag has to move to after config parsing.
 - document that, how to exactly set up the function to work with the system
 - program created paramaters
     - test with visualization function and date filter parameters

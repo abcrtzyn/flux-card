@@ -321,11 +321,13 @@ def main():
     try:
         args = parse_args()
 
+
+        config = get_config(args)
+
         if args.list_formats:
             print_formatters()
             exit()
-
-        config = get_config(args)
+        
         input_path = get_input_path(args, config)
         output_timezone = get_output_timezone(args, config)
         macro_config = get_macro_config(args,config)
