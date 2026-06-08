@@ -8,18 +8,17 @@ from pathlib import Path
 from typing import Iterable, Iterator, List, Set, Tuple
 from zoneinfo import ZoneInfo
 
-from config import AppConfig, MacroConfig
-from error import FluxCardCommandLineError, FluxCardError, FluxCardInputError, print_terminal_error
-from output_registry import print_formatters
-from output_runners import OutputRunner
-from settings_parsers import JobFilterAction, OutputSettingsAction, TimezoneAction
-from segments import Segment
+from .config import AppConfig, MacroConfig
+from .error import FluxCardCommandLineError, FluxCardError, FluxCardInputError, print_terminal_error
+from .output_registry import print_formatters
+from .output_runners import OutputRunner
+from .settings_parsers import JobFilterAction, OutputSettingsAction, TimezoneAction
+from .segments import Segment
 
 # this loads all the output formats into the registry
-import outputs  # pyright: ignore[reportUnusedImport]
+from . import outputs  # pyright: ignore[reportUnusedImport]
 
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 
 class FluxCardArgumentParser(argparse.ArgumentParser):
     def error(self, message: str):

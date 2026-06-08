@@ -2,9 +2,9 @@
 from io import TextIOWrapper
 from typing import List
 
-from output_registry import register_formatter
-from processors.formaters import timedelta_HH_mm_ss
-from segments import Segment
+from ..output_registry import register_formatter
+from ..processors.formaters import timedelta_HH_mm_ss
+from ..segments import Segment
 
 
 @register_formatter("csv")

@@ -11,12 +11,12 @@ from io import TextIOWrapper
 from math import ceil
 from typing import List
 
-from output_registry import register_formatter
-from processors.conversion import time_to_seconds_of_day
-from processors.daterange import daterange
-from processors.grouping import group_by_date
-from processors.reductions import total
-from segments import Segment
+from ..output_registry import register_formatter
+from ..processors.conversion import time_to_seconds_of_day
+from ..processors.daterange import daterange
+from ..processors.grouping import group_by_date
+from ..processors.reductions import total
+from ..segments import Segment
 
 
 section_length = 3600 # one hour

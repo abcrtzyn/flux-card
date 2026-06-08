@@ -8,4 +8,4 @@ current_dir = Path(__file__).parent
 for file_path in current_dir.glob("*.py"):
     module_name = file_path.stem
     if module_name != "__init__":
-        importlib.import_module(f"outputs.{module_name}")
+        importlib.import_module(f".{module_name}",package=__package__)

@@ -6,7 +6,7 @@ from datetime import date
 import itertools
 from typing import Dict, Iterable, List
 
-from segments import Segment
+from ..segments import Segment
 
 
 

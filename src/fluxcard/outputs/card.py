@@ -1,11 +1,11 @@
 from io import TextIOWrapper
 from typing import List
 
-from output_registry import register_formatter
-from processors.formaters import timedelta_HH_mm_ss
-from processors.grouping import group_by_date
-from processors.reductions import total
-from segments import Segment
+from ..output_registry import register_formatter
+from ..processors.formaters import timedelta_HH_mm_ss
+from ..processors.grouping import group_by_date
+from ..processors.reductions import total
+from ..segments import Segment
 
 
 @register_formatter("card")

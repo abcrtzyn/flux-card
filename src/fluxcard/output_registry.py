@@ -1,6 +1,6 @@
 import io
 from typing import Callable, Concatenate, Dict, List, TypeVar
-from segments import Segment
+from .segments import Segment
 
 FormatterProtocol = Callable[Concatenate[io.TextIOWrapper,List[Segment],...],None]
 """A function using FormatterProtocol takes in a text io stream and an iterable of segments that are sorted by the inTime field and outputs some text

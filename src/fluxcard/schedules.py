@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from math import floor
 from typing import Iterator, List, Tuple, TypeVar
 
-from error import FluxCardInputError
+from .error import FluxCardInputError
 
 
 

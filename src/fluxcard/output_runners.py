@@ -6,8 +6,8 @@ from pathlib import Path
 import sys
 from typing import Any, Dict, Generator, List, cast
 
-from output_registry import FormatterProtocol
-from segments import Segment
+from .output_registry import FormatterProtocol
+from .segments import Segment
 
 
 @dataclass(frozen=True)

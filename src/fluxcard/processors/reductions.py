@@ -1,7 +1,7 @@
 from datetime import timedelta
 from typing import List
 
-from segments import Segment
+from ..segments import Segment
 
 
 def total(data: List[Segment]) -> timedelta:

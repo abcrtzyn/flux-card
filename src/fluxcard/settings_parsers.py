@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Sequence, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from config import parse_output_runner_from_args
+from .config import parse_output_runner_from_args
 
 
 
