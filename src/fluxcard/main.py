@@ -24,11 +24,11 @@ class FluxCardArgumentParser(argparse.ArgumentParser):
     def error(self, message: str):
         raise FluxCardCommandLineError(f"{message}")
 
+
 @dataclass
 class ParsedArgs:
     timecard_path: Path | None
     output_timezone: ZoneInfo | None
-    alt_config: Path | None
     job_filter: Set[str] | None
     start_date: date | None
     end_date: date | None
@@ -38,12 +38,12 @@ class ParsedArgs:
     print_config: bool
     list_formats: bool
 
-def parse_args() -> ParsedArgs:
-    parser = FluxCardArgumentParser(prog="fluxcard",description="Summarize clock in sessions from the input file.\nUses settings from command line and config.toml")
+def parse_args(bootstrap_parser: FluxCardArgumentParser,argv: List[str]) -> ParsedArgs:
+    parser = FluxCardArgumentParser(prog="fluxcard",description="Summarize clock in sessions from the input file.\nUses settings from command line and config.toml",parents=[bootstrap_parser])
 
     parser.add_argument("-i", "--input", dest="timecard_path", type=lambda x: Path(x) if x else None, help="Path to input file")
     parser.add_argument("-tz", "--timezone", dest="output_timezone", action=TimezoneAction, help="timezone to format output")
-    parser.add_argument("-c","--config",dest="alt_config", type=lambda x: Path(x) if x else None, help="Alternate config file path")
+    
     parser.add_argument("-j","--job",dest="job_filter",action=JobFilterAction,help='Job(s) to filter by seperated by comma "WebDev,Gardening". Clear filter set by config with "_". One job is required in period mode')
 
 
@@ -57,12 +57,11 @@ def parse_args() -> ParsedArgs:
     parser.add_argument("--print-config",action="store_true", help="Print resolved configuration and exit")
     parser.add_argument("--list-formats",action="store_true", help="Print the list of formatter functions and exit")
 
-    raw_args = parser.parse_args()
+    raw_args = parser.parse_args(argv)
 
     return ParsedArgs(
         timecard_path=raw_args.timecard_path,
         output_timezone=raw_args.output_timezone,
-        alt_config=raw_args.alt_config,
         job_filter=raw_args.job_filter,
         start_date=raw_args.start_date,
         end_date=raw_args.end_date,
@@ -82,10 +81,10 @@ def parse_cli_start_date(date_str: str|None):
     except ValueError:
         raise argparse.ArgumentTypeError(f"invalid value '{date_str}', valid dates are 'YYYY-MM-DD' or '_'.")
 
-def get_config(args: ParsedArgs) -> AppConfig:
+def get_config(path: Path | None) -> AppConfig:
     # check for alternate config parameter
-    if args.alt_config is not None:
-        alt_config_path = Path(args.alt_config).resolve()
+    if path is not None:
+        alt_config_path = Path(path).resolve()
         if not alt_config_path.exists():
             raise FluxCardInputError(f'config file at "{alt_config_path}" does not exist')
         return AppConfig.load(alt_config_path)
@@ -319,10 +318,14 @@ def sort_by_time(segments: Iterable[Segment]) -> List[Segment]:
 
 def main():
     try:
-        args = parse_args()
+        config_arg_parser = FluxCardArgumentParser(add_help=False)
+        config_arg_parser.add_argument("-c","--config",dest="alt_config", type=lambda x: Path(x) if x else None, help="Alternate config file path")
 
+        config_args, remaining = config_arg_parser.parse_known_args()
 
-        config = get_config(args)
+        config = get_config(config_args.alt_config)
+        
+        args = parse_args(config_arg_parser,remaining)
 
         if args.list_formats:
             print_formatters()
