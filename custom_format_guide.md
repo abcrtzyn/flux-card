@@ -12,16 +12,16 @@ Format functions are expected to have type `(file: TextIO, data: List[Segment], 
 
 ### data
 
-`data` is a list of Segment class objects. Each segments is a single clocked in time period. This list has been sorted by inTime. All timezones are converted to the output timezone specified, I suggest that you do not alter the timezones.
+`data` is a list of Segment class objects. Each segment is a single clocked in time period. This list has been sorted by inTime. All timezones are converted to the output timezone specified, I suggest that you do not alter the timezones.
 
 ```python
 @dataclass
 class Segment:
     job: str # empty string if not specified
-    inTime: datetime
-    outTime: datetime
+    inTime: datetime.datetime
+    outTime: datetime.datetime
     description: str # empty string if not specified, can be multiple lines
-    elapsed: timedelta # calculated outTime - inTime
+    elapsed: datetime.timedelta # calculated outTime - inTime
 ```
 
 ### Other parameters
@@ -66,7 +66,7 @@ Actual example from the standard library
 from typing import List, TextIO
 
 from fluxcard.output_registry import register_formatter
-from fluxcard.processors.formaters import timedelta_HH_mm_ss
+from fluxcard.processors.formatters import timedelta_HH_mm_ss
 from fluxcard.segments import Segment
 
 @register_formatter("csv")
@@ -89,6 +89,6 @@ def output_csv(file: TextIO, data: List[Segment],job_column: bool = True):
 
 ## Processing functions
 
-There are many useful functions that I think are comon enough that I have impletemented them in fluxcard.processers library.
+There are many useful functions that I think are common enough that I have implemented them in fluxcard.processors library.
 
 Currently these functions are not documented.

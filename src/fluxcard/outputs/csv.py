@@ -2,7 +2,7 @@
 from typing import List, TextIO
 
 from ..output_registry import register_formatter
-from ..processors.formaters import timedelta_HH_mm_ss
+from ..processors.formatters import timedelta_HH_mm_ss
 from ..segments import Segment
 
 
