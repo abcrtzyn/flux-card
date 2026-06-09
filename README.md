@@ -65,6 +65,7 @@ This section goes through details of all parameters that can be set on the comma
 | **Macro**         | `-m [macro]`     |                   | No macro used               |
 | **Input File**    | `-i [path]`      | `input_file`      | *Required (Error)*          |
 | **Timezone**      | `-tz [zone]`     | `output_timezone` | *Required (Error)*          |
+| **Custom Output** | N/A              | `output_plugins`  | No action                   |
 
 #### Alternate Config
 
@@ -110,6 +111,14 @@ Timezone to convert all clock times to. Accepts standard IANA identifiers (like 
 - **CLI**: `-tz [zone]` or `--timezone [zone]`
 - **Config**: `output_timezone = "America/Chicago"`
 
+#### Custom Output Formats
+
+You can write your own output formats and load them in dynamically. Specify the python file with your output format function in a list here. See [output formats](#output-formats) for more details on making a custom format. File names can be absolute paths or paths relative to the config file directory.
+
+- **Config**: `output_plugins = ["custom.py","custom2.py"]`
+
+
+
 ### Macros and macro options
 
 | Option          | CLI Flag             | Config Key    | Macro Key    |Default / Action on not set       |
@@ -141,7 +150,7 @@ Read more about using period mode in the [period mode section](#period-mode-1). 
 
 #### Output
 
-Tell the program to output to a destination (stdout or file path) with a given format function. `dest` can be `stdout` or a file path. When specifying in a macro, `dest` can be left out to select `stdout` or specified explicitly. Many output formats are supported, and you can propose or create your own. See [output formats](#output-formats). The command line only allows one output flag, macros allow for multiple outputs at once. Many output formats also have options to customize the output, these can vary from format to format. I've used `param` as an example below. Currently output specific params are not allowed on the command line.
+Tell the program to output to a destination (stdout or file path) with a given format function. `dest` can be `stdout` or a file path. When specifying in a macro, `dest` can be left out to select `stdout` or specified explicitly. Many output formats are supported, and you can create your own. See [output formats](#output-formats). The command line only allows one output flag, macros allow for multiple outputs at once. Many output formats also have options to customize the output, these can vary from format to format. I've used `param` as an example below. Currently output specific params are not allowed on the command line.
 
 - **CLI**: `-o [dest] [format]` or `--output [dest] [format]` (dest file path absolute or relative to cwd)
 - **Macros**: `outputs = [{dest="path/to/file.txt",format="form",param=true}]` (dest file path absolute or relative to config file directory)
@@ -234,7 +243,11 @@ markers = [
 
 ## Output Formats
 
-Not documented yet.
+Fluxcard has many output formats included, but you may want to create your own. Because output formats are a big topic, see the following files.
+
+- [Output Format Gallery](output_format_gallery.md), list of current implemented output formats and their options
+- [Custom Format Guide](custom_format_guide.md), instructions on how to implement your own output format and use it.
+
 
 
 ## Program documentation
