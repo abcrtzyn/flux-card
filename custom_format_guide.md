@@ -4,7 +4,7 @@ Custom format functions give you the ability to create the output the way you wa
 
 ## Format Function Specification / Expectation
 
-Format functions are expected to have type `(file: TextIOWrapper, data: List[Segment], ...) -> None`. A type checker will enforce this through the registration decorator.
+Format functions are expected to have type `(file: TextIO, data: List[Segment], ...) -> None`. A type checker will enforce this through the registration decorator.
 
 ### file
 
@@ -48,7 +48,7 @@ from fluxcard.output_registry import register_formatter
 from fluxcard.segments import Segment
 
 @register_formatter("custom_name")
-def custom_function(file: TextIOWrapper, data: List[Segment]):
+def custom_function(file: TextIO, data: List[Segment]):
 ```
 3. Check that your function has been properly registered when you run the program. 
     - Make sure that the program is grabbing your correct config file first.
@@ -62,15 +62,15 @@ def custom_function(file: TextIOWrapper, data: List[Segment]):
 Actual example from the standard library
 
 ```python
-from io import TextIOWrapper
-from typing import List
+
+from typing import List, TextIO
 
 from fluxcard.output_registry import register_formatter
 from fluxcard.processors.formaters import timedelta_HH_mm_ss
 from fluxcard.segments import Segment
 
 @register_formatter("csv")
-def output_csv(file: TextIOWrapper, data: List[Segment],job_column: bool = True):
+def output_csv(file: TextIO, data: List[Segment],job_column: bool = True):
     """Create a csv with the raw date, in time, out time, elapsed time, job, and description.
     The job column can be turned off by the user"""
 

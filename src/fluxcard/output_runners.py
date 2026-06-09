@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass
-from io import TextIOWrapper
+
 from pathlib import Path
 import sys
-from typing import Any, Dict, Generator, List, cast
+from typing import Any, Dict, Generator, List, TextIO, cast
 
 from .output_registry import FormatterProtocol
 from .segments import Segment
@@ -26,7 +26,7 @@ class OutputRunner(ABC):
 
     @abstractmethod
     @contextmanager
-    def open_stream(self) -> Generator[TextIOWrapper,None,None]: ...
+    def open_stream(self) -> Generator[TextIO,None,None]: ...
 
     @abstractmethod
     def output_str(self) -> str: ...
@@ -37,8 +37,8 @@ class OutputRunner(ABC):
 class StdoutRunner(OutputRunner):
 
     @contextmanager
-    def open_stream(self) -> Generator[TextIOWrapper,None,None]:
-        yield cast(TextIOWrapper,sys.stdout)
+    def open_stream(self) -> Generator[TextIO,None,None]:
+        yield cast(TextIO,sys.stdout)
 
     def output_str(self) -> str:
         return 'stdout'
@@ -48,7 +48,7 @@ class FileRunner(OutputRunner):
     file_path: Path
 
     @contextmanager
-    def open_stream(self) -> Generator[TextIOWrapper,None,None]:
+    def open_stream(self) -> Generator[TextIO,None,None]:
         with self.file_path.open("w") as f:
             yield f
 

@@ -7,9 +7,9 @@
 
 
 
-from io import TextIOWrapper
+
 from math import ceil
-from typing import List
+from typing import List, TextIO
 
 from ..output_registry import register_formatter
 from ..processors.conversion import time_to_seconds_of_day
@@ -27,7 +27,7 @@ sections_per_day = ceil(86400 / section_length)
 
 
 @register_formatter("visualization")
-def render_visualization(file: TextIOWrapper, data: List[Segment],fill_in: bool = True):
+def render_visualization(file: TextIO, data: List[Segment],fill_in: bool = True):
     
     grouped = group_by_date(data)
 

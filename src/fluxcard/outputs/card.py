@@ -1,5 +1,5 @@
-from io import TextIOWrapper
-from typing import List
+
+from typing import List, TextIO
 
 from ..output_registry import register_formatter
 from ..processors.formaters import timedelta_HH_mm_ss
@@ -9,7 +9,7 @@ from ..segments import Segment
 
 
 @register_formatter("card")
-def output_card(file: TextIOWrapper, data: List[Segment]):
+def output_card(file: TextIO, data: List[Segment]):
     """My format for pasting into a formatted Apple pages document, sort of a tsv"""
 
     grouped = group_by_date(data)

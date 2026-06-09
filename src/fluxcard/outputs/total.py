@@ -1,7 +1,7 @@
 
 
-from io import TextIOWrapper
-from typing import List
+
+from typing import List, TextIO
 
 from ..output_registry import register_formatter
 from ..processors.formaters import timedelta_HH_mm_ss
@@ -10,7 +10,7 @@ from ..segments import Segment
 
 
 @register_formatter("total")
-def print_total(file: TextIOWrapper, data: List[Segment]):
+def print_total(file: TextIO, data: List[Segment]):
     
     total_hours = total(data)
 

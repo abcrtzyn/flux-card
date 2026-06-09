@@ -1,5 +1,5 @@
-from io import TextIOWrapper
-from typing import List
+
+from typing import List, TextIO
 
 from ..output_registry import register_formatter
 from ..processors.grouping import group_by_date
@@ -7,7 +7,7 @@ from ..processors.reductions import total
 from ..segments import Segment
 
 @register_formatter("summary")
-def summary(file: TextIOWrapper, data: List[Segment]):
+def summary(file: TextIO, data: List[Segment]):
     
     grouped = group_by_date(data)
 

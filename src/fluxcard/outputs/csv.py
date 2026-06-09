@@ -1,6 +1,5 @@
 
-from io import TextIOWrapper
-from typing import List
+from typing import List, TextIO
 
 from ..output_registry import register_formatter
 from ..processors.formaters import timedelta_HH_mm_ss
@@ -8,7 +7,7 @@ from ..segments import Segment
 
 
 @register_formatter("csv")
-def output_csv(file: TextIOWrapper, data: List[Segment],job_column: bool = True):
+def output_csv(file: TextIO, data: List[Segment],job_column: bool = True):
     """Create a csv with the raw date, in time, out time, elapsed time, job, and description.
     The job column can be turned off by the user"""
 
