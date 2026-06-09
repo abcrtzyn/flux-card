@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .error import FluxCardConfigFieldRequiredError, FluxCardConfigTypeError, FluxCardConfigValueError
 from .monads import Box, Maybe
-from .output_registry import get_formatter
+from .output_registry import RegistrationTracker, get_formatter
 from .output_runners import FileRunner, OutputRunner, StdoutRunner
 from .schedules import DaysCycleSchedule, ManualCycleSchedule, MonthCycleSchedule, Schedule
 
@@ -322,6 +322,10 @@ def load_plugin(path: str, index: int, config_path: Path) -> None:
     # using an index value to make sure that modules are uniquely named
     module_name = f"_dynamic_plugin_{file_path.stem}_{index}"
 
+    tracker = RegistrationTracker()
+
+    tracker.begin()
+
     try:
         spec = spec_from_file_location(module_name, str(file_path))
         if spec is None or spec.loader is None:
@@ -337,6 +341,15 @@ def load_plugin(path: str, index: int, config_path: Path) -> None:
         # this removes it from sys.modules because we don't need it to be there.
         if module_name in sys.modules:
             del sys.modules[module_name]
+    
+    added_formatters = tracker.finish()
+    if len(added_formatters) > 0:
+        added_str = ', '.join(f"'{k}'" for k in sorted(added_formatters))
+        print(f'loaded module at {file_path} and added formatter{'s' if len(added_formatters) > 1 else ''} {added_str}')
+    else:
+        print(f'warning: loaded module at {file_path} but no formatters were registered')
+
+
 
 
 

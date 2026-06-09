@@ -51,3 +51,10 @@ def print_formatters() -> None:
         # Prints format name and the first line of its python docstring
         doc = func.__doc__.split('\n')[0] if func.__doc__ else "No description available."
         print(f"  {name:<12} ── {doc}")
+
+class RegistrationTracker():
+    def begin(self):
+        self.before_formatters = set(_OUTPUT_REGISTRY.keys())
+    
+    def finish(self):
+        return set(_OUTPUT_REGISTRY.keys()) - self.before_formatters
