@@ -9,6 +9,8 @@ from ..segments import Segment
 
 @register_formatter("csv")
 def output_csv(file: TextIOWrapper, data: List[Segment],job_column: bool = True):
+    """Create a csv with the raw date, in time, out time, elapsed time, job, and description.
+    The job column can be turned off by the user"""
 
     file.write(f'date,in,out,elapsed,{'job,' if job_column else ''}description\n')
     for seg in data:
