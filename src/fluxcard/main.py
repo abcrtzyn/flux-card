@@ -3,6 +3,7 @@
 import argparse
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, date # pyright: ignore[reportPrivateUsage]
+from enum import Enum, auto
 import os
 from pathlib import Path
 from typing import Iterable, Iterator, List, Set, Tuple
@@ -18,6 +19,11 @@ from .segments import Segment
 # this loads all the output formats into the registry
 from . import outputs  # pyright: ignore[reportUnusedImport]
 
+
+class DateFilterMode(Enum):
+    CLI_DATE = auto()
+    PERIOD = auto()
+    NONE = auto()
 
 
 class FluxCardArgumentParser(argparse.ArgumentParser):
@@ -185,29 +191,12 @@ def get_job_filter(args: ParsedArgs, macro_config: MacroConfig | None, config: A
     
     return None
 
-
-def get_period_settings(period_offset: int, job_filter: Set[str] | None, config: AppConfig) -> Tuple[date|None,date|None]:
-    if job_filter is None:
-            raise FluxCardInputError('job filter is required in period mode and each of the jobs schedules must match')
-    
-    # check that every job in job_filter has the same schedule set
-    schedules: Set[str | None] = set()
-    for x in job_filter:
-        jc = config.get_job_config(x)
-        if jc is None:
-            raise FluxCardInputError(f"in period mode, every job in job filter must have a job config with a schedule set, job config for '{x} was not found")
-        schedules.add(jc.get_schedule_key())
-    
-    if len(schedules) != 1:
-        raise FluxCardInputError(f'in period mode, every job in job filter must have the same schedule, actually have {schedules}')
-    schedule_key = schedules.pop()
-    if schedule_key is None:
-        raise FluxCardInputError('in period mode, the job(s) filtered by must have a schedule')
-    schedule = config.get_schedule(schedule_key)
-    if schedule is None:
-        raise FluxCardInputError(f"could not find schedule '{schedule_key}' in the config")
-
-    return schedule.get_date_filter(period_offset)
+def get_cli_date_filter(args: ParsedArgs) -> Tuple[date|None,date|None]:
+    """return the date filter for CLI date filter dates filter"""
+    # date filtering, straight use them
+    if args.start_date is not None and args.end_date is not None and args.start_date >= args.end_date:
+        raise FluxCardInputError('start date is after or the same as end date, no results would show')
+    return (args.start_date, args.end_date)
 
 
 def get_period_parameter(args: ParsedArgs, macro_config: MacroConfig | None) -> int | None:
@@ -217,34 +206,31 @@ def get_period_parameter(args: ParsedArgs, macro_config: MacroConfig | None) -> 
         return macro_config.get_period_value()
     
     return None
-    
 
-def get_date_filters(args: ParsedArgs, macro_config: MacroConfig | None, job_filter: Set[str] | None, config: AppConfig | None) -> Tuple[date | None,date | None]:
-    # priority
-    # tied 1. command line start/end
-    # tied 1. command line period
-    # 2. macro config period settings
-    
-    # check that we don't have both command line args options
-    if args.period is not None and (args.start_date or args.end_date):
-        # if a period is specified and dates are specified, disallow it
-        raise FluxCardInputError("Cannot use --period while also using date filter")
+def get_schedule(job_filter: Set[str] | None, config: AppConfig | None):
+    if job_filter is None:
+        raise FluxCardInputError('job filter is required in period mode and each of the jobs schedules must match')
+    if config is None:
+        raise FluxCardInputError('config file not given, required for job config and schedule config')
 
-    # if there is a start date or end date given
-    if args.start_date or args.end_date:
-        # date filtering, straight use them
-        if args.start_date is not None and args.end_date is not None and args.start_date >= args.end_date:
-            raise FluxCardInputError('start date is after or the same as end date, no results would show')
-        return (args.start_date, args.end_date)
+    # check that every job in job_filter has the same schedule set
+    schedules: set[str | None] = set()
+    for x in job_filter:
+        jc = config.get_job_config(x)
+        if jc is None:
+            raise FluxCardInputError(f"in period mode, every job in job filter must have a job config with a schedule set, job config for '{x} was not found")
+        schedules.add(jc.get_schedule_key())
 
-    # now try get period settings for either command line or macro config
-    period = get_period_parameter(args,macro_config)
-    
-    if period is not None:
-        # then come up with the start and end date
-        return get_period_settings(period,job_filter,config)
-        
-    return None, None
+    if len(schedules) != 1:
+        raise FluxCardInputError(f'in period mode, every job in job filter must have the same schedule, actually have {schedules}')
+    schedule_key = schedules.pop()
+    if schedule_key is None:
+        raise FluxCardInputError('in period mode, the job(s) filtered by must have a schedule')
+    schedule_config = config.get_schedule(schedule_key)
+    if schedule is None:
+        raise FluxCardInputError(f"could not find schedule '{schedule_key}' in the config")
+
+    return schedule
 
 
 def get_outputs(args: ParsedArgs, macro_config: MacroConfig | None) -> List[OutputRunner]:
@@ -387,11 +373,20 @@ def main():
         output_timezone = get_output_timezone(args, config)
         macro_config = get_macro_config(args,config)
         job_filter = get_job_filter(args, macro_config, config)
-        
+
         if args.period is not None and (args.start_date or args.end_date):
-            # if a period is specified and dates are specified, disallow it
             raise FluxCardInputError("Cannot use --period while also using date filter")
-        
+
+        if args.start_date or args.end_date:
+            start_date, end_date = get_cli_date_filter(args)
+        elif period := get_period_parameter(args,macro_config):
+            schedule = get_schedule(job_filter,config)
+
+
+        else:
+            
+
+       
         # CURSOR
         # get_date_filters is doing too much. I would say we should get the schedule used by period mode first, except we have to know which date filtering mode we are using first...
 

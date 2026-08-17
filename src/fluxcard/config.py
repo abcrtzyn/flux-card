@@ -110,13 +110,13 @@ def resolve_config_relative_path(raw_path: str, config_file: Path) -> Path:
 class ScheduleConfig:
     raw: TomlTable
 
-    def __init__(self, raw: TomlType, config: 'AppConfig'):
+    def __init__(self, raw: TomlType):
         if not isinstance(raw,dict):
             raise_type_error('',type(raw).__name__,'dict')
      
 
-
-def parse_schedule_from_dict(raw: TomlTable,manual_schedules_raw: TomlType|None) -> Schedule:
+def parse_schedule_from_config(schedule_config: ScheduleConfig) -> Schedule:
+    raw = schedule_config.raw
     try:
         schedule_type = (
             Box(raw.get('type'))
@@ -204,9 +204,6 @@ class JobConfig:
             raise_type_error('',type(raw).__name__,'dict')
         self.raw = raw
 
-
-
-    
     def get_schedule_key(self) -> str | None:
 
         try:
