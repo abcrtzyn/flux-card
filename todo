@@ -2,6 +2,7 @@
     - test with visualization function and date filter parameters
     - need to wire those parameters through the execute output function
     - then check if the function actually needs them, should we inspect again on run or have the parsing check inspect figure this out?
+    - consider adding them to main:create_output_runner_common, have them as a list, currently it checks for given values that the function can't take, but we can also record all the parameters that aren't given, or reference a list of known params, when we run the function, just wire in the ones that we have that the function needs. If the function has **kwargs, we just send all of them, and they can figure out what they want.
 - document that, show that these optional parameters are allowed by custom functions
 - grouped by pay period summary output format and its requirements
     - Implementation wise, how should this data be grouped, what pay period function is needed?
