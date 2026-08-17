@@ -126,7 +126,7 @@ def parse_schedule_from_dict(raw: TomlTable,manual_schedules_raw: TomlType|None)
         case 'monthly':
             return _parse_month_cycle_from_dict(raw)
         case 'manual':
-            return _parse_manual_cycle(raw)
+            return _parse_manual_cycle(manual_schedules_raw)
         case _:
             raise FluxCardConfigValueError(f'Unknown schedule type {schedule_type} at key schedule')
     
