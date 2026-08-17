@@ -111,6 +111,7 @@ class ScheduleConfig:
     def __init__(self, raw: TomlType):
         if not isinstance(raw,dict):
             raise_type_error('',type(raw).__name__,'dict')
+        self.raw = raw
 
     def get_type(self):
         try:

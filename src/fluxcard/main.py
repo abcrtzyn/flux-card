@@ -12,12 +12,12 @@ from zoneinfo import ZoneInfo
 
 from fluxcard.schedules import Schedule
 
-from .config import AppConfig, MacroConfig, OutputConfig, ScheduleConfig, TomlTable, parse_days_cycle_from_dict, parse_manual_cycle, parse_month_cycle_from_dict
-from .error import FluxCardCommandLineError, FluxCardConfigValueError, FluxCardError, FluxCardInputError, print_terminal_error
-from .output_registry import get_formatter, print_formatters
-from .output_runners import FileRunner, OutputRunner, StdoutRunner
-from .settings_parsers import OutputSettingsAction
-from .segments import Segment
+from fluxcard.config import AppConfig, MacroConfig, OutputConfig, ScheduleConfig, TomlTable, parse_days_cycle_from_dict, parse_manual_cycle, parse_month_cycle_from_dict
+from fluxcard.error import FluxCardCommandLineError, FluxCardConfigValueError, FluxCardError, FluxCardInputError, print_terminal_error
+from fluxcard.output_registry import get_formatter, print_formatters
+from fluxcard.output_runners import FileRunner, OutputRunner, StdoutRunner
+from fluxcard.settings_parsers import OutputSettingsAction
+from fluxcard.segments import Segment
 
 # this loads all the output formats into the registry
 from . import outputs  # pyright: ignore[reportUnusedImport]
@@ -431,13 +431,20 @@ def main():
             raise FluxCardInputError("Cannot use --period while also using date filter")
 
         if args.start_date or args.end_date:
+            # cli date filter
             start_date, end_date = get_cli_date_filter(args)
-        elif period := get_period_parameter(args,macro_config):
-            schedule = get_schedule(job_filter,config)
-            start_date, end_date = schedule.get_date_filter(period)
         else:
-            start_date, end_date = None,None
+            # check for period input
+            period = get_period_parameter(args,macro_config)
+            if period is None:
+                # no filter
+                start_date, end_date = None,None
+            else:
+                # period filter
+                schedule = get_schedule(job_filter,config)
+                start_date, end_date = schedule.get_date_filter(period)
 
+        
         outputs = get_outputs(args, macro_config)
 
 

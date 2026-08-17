@@ -1,6 +1,10 @@
 timecard_path = "Clock_example.txt"
 output_timezone = "US/Central"
 
-[jobs.WebDev]
+[schedules.one]
+type = "days_cycle"
 period_anchor = 2026-05-10
 period_length = 14
+
+[jobs.WebDev]
+schedule = "one"
