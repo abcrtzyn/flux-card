@@ -1,17 +1,14 @@
 
 from argparse import Action, ArgumentError, ArgumentParser, Namespace
-from pathlib import Path
 from typing import Any, Sequence, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-
-from .config import parse_output_runner_from_args
 
 
 
 class OutputSettingsAction(Action):
     def __call__(self, parser: ArgumentParser, namespace: Namespace, values: str | Sequence[Any] | None, option_string: str | None=None):
         try:
-            oc = parse_output_runner_from_args(values[0],values[1],Path('.'),{}) # pyright: ignore[reportUnknownArgumentType, reportOptionalSubscript]
+            oc = (values[0],values[1]) # pyright: ignore[reportOptionalSubscript, reportUnknownVariableType]
         except Exception as e:
             e.add_note('could not parse output flag because of the above error')
             raise e
