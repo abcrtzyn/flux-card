@@ -7,7 +7,7 @@ from enum import Enum, auto
 import inspect
 import os
 from pathlib import Path
-from typing import Iterable, Iterator, List, Literal, Set, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Literal, Set, Tuple
 from zoneinfo import ZoneInfo
 
 from fluxcard.schedules import Schedule
@@ -472,8 +472,10 @@ def main():
     segments = date_filter_segments(job_filter_segments(parse_segments(splits,output_timezone),job_filter),start_date,end_date)
     data = sort_by_time(segments)
 
+    params: Dict[str,Any] = {}
+
     for o in outputs:
-        o.execute_output(data)
+        o.execute_output(data,params)
     
 
 

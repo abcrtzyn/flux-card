@@ -16,7 +16,7 @@ class OutputRunner(ABC):
     format_function: FormatterProtocol
     kwargs: Dict[str,Any]
     
-    def execute_output(self, data: List[Segment]) -> None:
+    def execute_output(self, data: List[Segment], params: Dict[str,Any]) -> None:
         """Runs the output formatter function
         Expects input data to be sorted by inTime"""
 
