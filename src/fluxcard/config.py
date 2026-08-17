@@ -5,18 +5,16 @@
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from importlib.util import module_from_spec, spec_from_file_location
-import inspect
 from pathlib import Path
 import sys
 import tomllib
-from typing import Any, Callable, Dict, List, NoReturn, Sequence, TypeGuard, TypeVar, Union, cast
+from typing import Any, Callable, Dict, List, Literal, NoReturn, Sequence, TypeGuard, TypeVar, Union, cast
 
 
 from .error import FluxCardConfigFieldRequiredError, FluxCardConfigTypeError, FluxCardConfigValueError
 from .monads import Box, Maybe
-from .output_registry import RegistrationTracker, get_formatter
-from .output_runners import FileRunner, OutputRunner, StdoutRunner
-from .schedules import DaysCycleSchedule, ManualCycleSchedule, MonthCycleSchedule, Schedule
+from .output_registry import RegistrationTracker
+from .schedules import DaysCycleSchedule, ManualCycleSchedule, MonthCycleSchedule
 
 # Define the allowed scalar types from the TOML specification
 TomlScalar = Union[str, int, float, bool, datetime, date, time]
@@ -113,34 +111,21 @@ class ScheduleConfig:
     def __init__(self, raw: TomlType):
         if not isinstance(raw,dict):
             raise_type_error('',type(raw).__name__,'dict')
+
+    def get_type(self):
+        try:
+            return (
+                Box(self.raw.get('type'))
+                .map(lambda x: x if x is not None else raise_required_field_error('type'))
+                .map(lambda x: x if isinstance(x,str) else raise_type_error('type',type(x).__name__,'str'))
+                .unwrap()
+            )
+        except Exception as e:
+            e.add_note('key type')
+            raise e
      
-
-def parse_schedule_from_config(schedule_config: ScheduleConfig, name: str, config: "AppConfig") -> Schedule:
+def parse_days_cycle_from_dict(schedule_config: ScheduleConfig):
     raw = schedule_config.raw
-    try:
-        schedule_type = (
-            Box(raw.get('type'))
-            .map(lambda x: x if x is not None else raise_required_field_error('type'))
-            .map(lambda x: x if isinstance(x,str) else raise_type_error('type',type(x).__name__,'str'))
-            .unwrap()
-        )
-    except Exception as e:
-        e.add_note('key type')
-        raise e
-    
-    match schedule_type:
-        case 'days_cycle':
-            return _parse_days_cycle_from_dict(raw)
-        case 'monthly':
-            return _parse_month_cycle_from_dict(raw)
-        case 'manual':
-            return _parse_manual_cycle(name, config)
-        case _:
-            raise FluxCardConfigValueError(f'Unknown schedule type {schedule_type} at key schedule')
-    
-    assert False, "unreachable"
-
-def _parse_days_cycle_from_dict(raw: TomlTable):
     try:
         anchor = (
             Box(raw.get('period_anchor'))
@@ -165,7 +150,8 @@ def _parse_days_cycle_from_dict(raw: TomlTable):
 
     return DaysCycleSchedule(anchor,length)
 
-def _parse_month_cycle_from_dict(raw: TomlTable) -> MonthCycleSchedule:
+def parse_month_cycle_from_dict(schedule_config: ScheduleConfig) -> MonthCycleSchedule:
+    raw = schedule_config.raw
     try:
         start_day = (
             Box(raw.get('start_day'))
@@ -181,7 +167,7 @@ def _parse_month_cycle_from_dict(raw: TomlTable) -> MonthCycleSchedule:
     return MonthCycleSchedule(start_day)
 
 
-def _parse_manual_cycle(name: str, config: "AppConfig"):
+def parse_manual_cycle(name: str, config: "AppConfig"):
     # have to go pick up the historical markers
     manual_schedule = config.get_manual_schedule(name)
     
@@ -208,74 +194,57 @@ class JobConfig:
             e.add_note('key schedule')
             raise e
 
+class OutputConfig:
+    raw: TomlTable
+    config_path: Path
 
-def parse_output_runner_from_dict(raw: TomlTable, config_path: Path) -> OutputRunner:
-    # output is required, otherwise, how would we know how to output?
-    try:
-        form = (
-            Box(raw.get('format'))
-            .map(lambda x: x if x is not None else raise_required_field_error('format'))
-            .map(lambda x: x if isinstance(x, str) else raise_type_error('format',type(x).__name__,'str'))
-            .unwrap()
-        )
-    except Exception as e:
-        e.add_note('key format')
-        raise e
-    # remove the key from the dictionary
-    raw.pop('format')
-    try:
-        dest = Box(raw.get('dest','stdout')).map(lambda x: x if isinstance(x, str) else raise_type_error('dest',type(x).__name__,'str')).unwrap()
-    except Exception as e:
-        e.add_note('key dest')
-        raise e
-    # remove the key from the dictionary
-    try:
-        raw.pop("dest")
-    except:
-        pass
+    def __init__(self, raw: TomlType, config_path: Path):
+        if not isinstance(raw,dict):
+            raise_type_error('',type(raw).__name__,'dict')
+        self.raw = raw
+        self.config_path = config_path
 
-    # give these argument versions for actual parsing, along with the rest of the arguments as is.
-    return _parse_output_runner_common(dest,form,config_path,raw)
+    def get_format(self):
+        try:
+            return (
+                Box(self.raw.get('format'))
+                .map(lambda x: x if x is not None else raise_required_field_error('format'))
+                .map(lambda x: x if isinstance(x, str) else raise_type_error('format',type(x).__name__,'str'))
+                .unwrap()
+            )
+        except Exception as e:
+            e.add_note('key format')
+            raise e
 
-def parse_output_runner_from_args(dest: str, form: str, config_path: Path, extra_kwargs: TomlTable) -> OutputRunner:
-    return _parse_output_runner_common(dest,form,config_path,extra_kwargs)
+    def get_destination(self) -> Path | Literal['stdout']:
+        try:
+            dest = (Box(self.raw.get('dest','stdout'))
+                .map(lambda x: x if isinstance(x, str) else raise_type_error('dest',type(x).__name__,'str'))
+                .unwrap()
+            )
+        except Exception as e:
+            e.add_note('key dest')
+            raise e
 
+        return dest if dest == 'stdout' else resolve_config_relative_path(dest,self.config_path)
 
-def _parse_output_runner_common(dest: str, form: str, config_path: Path, extra_kwargs: TomlTable) -> OutputRunner:
-    # get the formatter
-    formatter = get_formatter(form)
-
-    # check the signature
-    sig = inspect.signature(formatter)
-    # if the signature has **kwargs in it, we don't check keys.
-    if not any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values()):
-        # check the given kwargs for invalid keys (keys not supported by the formatter)
-        invalid_keys = set(extra_kwargs.keys()) - set(sig.parameters.keys())
-        if invalid_keys:
-            raise FluxCardConfigValueError(f'Format "{form}" received unsupported options: {', '.join(invalid_keys)}')
-    # we have passed the key check here
-
-    # destination can be None or stdout for stdout
-    if dest == "stdout":
-        return StdoutRunner(form,formatter,extra_kwargs)
-
-    dest_file_path = resolve_config_relative_path(dest, config_path)
-    
-    return FileRunner(form,formatter,extra_kwargs,dest_file_path)
-
-
+    def get_extra(self):
+        args = self.raw.copy()
+        args.pop('format')
+        if 'dest' in args:
+            args.pop('dest')
+        return args
 
 
 class MacroConfig:
     raw: TomlTable
-    # job_filter: Set[str] | None #= field(default=None)
-    # period: int | None #= field(default=None)
-    # output_runners: List[OutputRunner]
+    config_path: Path
 
-    def __init__(self, raw: TomlType):
+    def __init__(self, raw: TomlType, config_path: Path):
         if not isinstance(raw,dict):
             raise_type_error('',type(raw).__name__,'dict')
         self.raw = raw
+        self.config_path = config_path
     
     def get_job_filter(self):
         try:
@@ -299,12 +268,12 @@ class MacroConfig:
             e.add_note('key period')
             raise e
 
-    def get_outputs(self):
+    def get_output_configs(self) -> List[OutputConfig]:
         try:
             return (
                 Box(self.raw.get('outputs',[]))
                 .map(lambda x: x if isinstance(x,list) else raise_type_error('outputs',type(x).__name__,'list'))
-                .map(list_for_each(with_key_note(lambda i: f'output {i}',lambda i,x: x if isinstance(x,dict) else raise_type_error(f'outputs.{i}',type(x).__name__,'dict'))))
+                .map(list_for_each(with_key_note(lambda i: f'output {i}',lambda i,x: OutputConfig(x,self.config_path))))
                 .unwrap()
             )
         except Exception as e:
@@ -410,7 +379,7 @@ class AppConfig:
             e.add_note('key default_job')
             raise e
 
-    def get_schedule(self,schedule_name: str) -> Schedule | None:
+    def get_schedule(self,schedule_name: str) -> ScheduleConfig | None:
         # step 1, get the schedule table
         try:
             schedules = (
@@ -426,7 +395,6 @@ class AppConfig:
         return (
             Maybe(schedules.get(schedule_name))
             .map(lambda x: ScheduleConfig(x))
-            .map(lambda x: parse_schedule_from_config(x,schedule_name,self))
             .unwrap()
         )
     
@@ -463,7 +431,7 @@ class AppConfig:
             try:
                 return (
                     Maybe(macros.get(macro))
-                    .map(MacroConfig)
+                    .map(lambda x: MacroConfig(x, self.config_path))
                     .unwrap()
                 )
             except Exception as e:

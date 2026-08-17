@@ -4,17 +4,18 @@ import argparse
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, date # pyright: ignore[reportPrivateUsage]
 from enum import Enum, auto
+import inspect
 import os
 from pathlib import Path
-from typing import Iterable, Iterator, List, Set, Tuple
+from typing import Iterable, Iterator, List, Literal, Set, Tuple
 from zoneinfo import ZoneInfo
 
 from fluxcard.schedules import Schedule
 
-from .config import AppConfig, MacroConfig
-from .error import FluxCardCommandLineError, FluxCardError, FluxCardInputError, print_terminal_error
-from .output_registry import print_formatters
-from .output_runners import OutputRunner
+from .config import AppConfig, MacroConfig, OutputConfig, ScheduleConfig, TomlTable, parse_days_cycle_from_dict, parse_manual_cycle, parse_month_cycle_from_dict
+from .error import FluxCardCommandLineError, FluxCardConfigValueError, FluxCardError, FluxCardInputError, print_terminal_error
+from .output_registry import get_formatter, print_formatters
+from .output_runners import FileRunner, OutputRunner, StdoutRunner
 from .settings_parsers import OutputSettingsAction
 from .segments import Segment
 
@@ -41,7 +42,7 @@ class ParsedArgs:
     start_date: date | None
     end_date: date | None
     period: int | None
-    output: OutputRunner | None
+    output: Tuple[str,str] | None
     macro: str | None
     print_config: bool
     list_formats: bool
@@ -51,9 +52,9 @@ class ParsedArgs:
 def parse_args() -> ParsedArgs:
     parser = FluxCardArgumentParser(prog="fluxcard",description="Summarize clock in sessions from the input file.\nUses settings from command line and config.toml")
 
-    parser.add_argument("-c","--config",dest="alt_config", type=lambda x: Path(x).resolve() if x else None, help="Alternate config file path")
+    parser.add_argument("-c","--config",dest="alt_config", type=lambda x: Path(x).expanduser().resolve() if x else None, help="Alternate config file path")
 
-    parser.add_argument("-i", "--input", dest="timecard_path", type=lambda x: Path(x).resolve() if x else None, help="Path to input file")
+    parser.add_argument("-i", "--input", dest="timecard_path", type=lambda x: Path(x).expanduser().resolve() if x else None, help="Path to input file")
     parser.add_argument("-tz", "--timezone", dest="output_timezone", help="timezone to format output")
     
     parser.add_argument("-j","--job",dest="job_filter",help='Job(s) to filter by seperated by comma "WebDev,Gardening". Clear filter set by config with "_". One job is required in period mode')
@@ -209,6 +210,22 @@ def get_period_parameter(args: ParsedArgs, macro_config: MacroConfig | None) -> 
     
     return None
 
+def create_schedule_from_config(schedule_config: ScheduleConfig, name: str, config: "AppConfig") -> Schedule:
+    schedule_type = schedule_config.get_type()
+    
+    match schedule_config.get_type():
+        case 'days_cycle':
+            return parse_days_cycle_from_dict(schedule_config)
+        case 'monthly':
+            return parse_month_cycle_from_dict(schedule_config)
+        case 'manual':
+            return parse_manual_cycle(name, config)
+        case _:
+            raise FluxCardConfigValueError(f'Unknown schedule type {schedule_type} at key schedule')
+    
+    assert False, "unreachable"
+
+
 def get_schedule(job_filter: Set[str] | None, config: AppConfig | None) -> Schedule:
     if job_filter is None:
         raise FluxCardInputError('job filter is required in period mode and each of the jobs schedules must match')
@@ -228,30 +245,64 @@ def get_schedule(job_filter: Set[str] | None, config: AppConfig | None) -> Sched
     schedule_key = schedules.pop()
     if schedule_key is None:
         raise FluxCardInputError('in period mode, the job(s) filtered by must have a schedule')
-    schedule = config.get_schedule(schedule_key)
-    if schedule is None:
+    schedule_config = config.get_schedule(schedule_key)
+    if schedule_config is None:
         raise FluxCardInputError(f"could not find schedule '{schedule_key}' in the config")
 
-    return schedule
+    return create_schedule_from_config(schedule_config,schedule_key,config)
+
+def create_output_runner_common(dest: Path | Literal['stdout'], form: str, extra_kwargs: TomlTable) -> OutputRunner:
+    # get the formatter
+    formatter = get_formatter(form)
+
+    # check the signature
+    sig = inspect.signature(formatter)
+    # if the signature has **kwargs in it, we don't check keys.
+    if not any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values()):
+        # check the given kwargs for invalid keys (keys not supported by the formatter)
+        invalid_keys = set(extra_kwargs.keys()) - set(sig.parameters.keys())
+        if invalid_keys:
+            raise FluxCardConfigValueError(f'Format "{form}" received unsupported options: {', '.join(invalid_keys)}')
+    # we have passed the key check here
+
+    # destination can be None or stdout for stdout
+    if dest == "stdout":
+        return StdoutRunner(form,formatter,extra_kwargs)
+    
+    return FileRunner(form,formatter,extra_kwargs,dest)
+
+
+
+def create_output_runner_from_args(output_args: Tuple[str,str]) -> OutputRunner:
+    dest = output_args[0]
+    # normalizing destination variable, probably don't have to do about half of of the path resolution stuff, but doing it anyway.
+    if dest != 'stdout':
+        dest = Path(dest).expanduser().resolve()
+
+    return create_output_runner_common(dest,output_args[1],{})
+
+def create_output_runner_from_config(output_config: OutputConfig) -> OutputRunner:
+    # output is required, otherwise, how would we know how to output?
+    form = output_config.get_format()
+    # remove the key from the dictionary
+    dest = output_config.get_destination()
+    # give these argument versions for actual parsing, along with the rest of the arguments as is.
+    return create_output_runner_common(dest,form,output_config.get_extra())
+
+
 
 
 def get_outputs(args: ParsedArgs, macro_config: MacroConfig | None) -> List[OutputRunner]:
-    outputs: List[OutputConfig] = []
     
-    # if args.outputs
+    # if args.outputs, then we use the single output definde there
     if args.output is not None:
-        outputs = [args.output]
+        return [create_output_runner_from_args(args.output)]
 
-    # else, look at macro config
+    # else, look at macro config, this can be a list
     if macro_config is not None:
-        outputs = macro_config.output_runners or []
-    
-    # go through each, check for valid file path, valid format string...
-    
+        return [create_output_runner_from_config(x) for x in macro_config.get_output_configs()]
 
-    return 
-
-
+    return []
 
 def check_file_terminator(input_path: Path) -> None:
     """Check that the file terminates properly, will raise an error if not"""
@@ -388,6 +439,8 @@ def main():
             start_date, end_date = None,None
 
         outputs = get_outputs(args, macro_config)
+
+
     except FluxCardError as e:
         print_terminal_error(e)
         exit(1)
