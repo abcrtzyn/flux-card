@@ -115,7 +115,7 @@ class ScheduleConfig:
             raise_type_error('',type(raw).__name__,'dict')
      
 
-def parse_schedule_from_config(schedule_config: ScheduleConfig) -> Schedule:
+def parse_schedule_from_config(schedule_config: ScheduleConfig, name: str, config: "AppConfig") -> Schedule:
     raw = schedule_config.raw
     try:
         schedule_type = (
@@ -134,7 +134,7 @@ def parse_schedule_from_config(schedule_config: ScheduleConfig) -> Schedule:
         case 'monthly':
             return _parse_month_cycle_from_dict(raw)
         case 'manual':
-            return _parse_manual_cycle(manual_schedules_raw)
+            return _parse_manual_cycle(name, config)
         case _:
             raise FluxCardConfigValueError(f'Unknown schedule type {schedule_type} at key schedule')
     
@@ -181,19 +181,11 @@ def _parse_month_cycle_from_dict(raw: TomlTable) -> MonthCycleSchedule:
     return MonthCycleSchedule(start_day)
 
 
-def _parse_manual_cycle(manual_schedules_raw: TomlType | None):
+def _parse_manual_cycle(name: str, config: "AppConfig"):
     # have to go pick up the historical markers
-    markers = (
-        Maybe(manual_schedules_raw)
-        .map(lambda x: x if isinstance(x,dict) else raise_type_error('manual_schedule_history.[job_name]',type(x).__name__,'dict'))
-        .map(lambda x: x.get('markers',[]))
-        .map(lambda x: x if isinstance(x,list) else raise_type_error('markers',type(x).__name__,'list'))
-        .map(lambda x: x if is_list_dates(x) else raise_type_error('markers',type(x).__name__,'list of dates'))
-        .map(lambda x: x if is_date_list_sorted(x) else raise_value_error('markers',x,'the list to be sorted'))
-        .unwrap_or(list)
-    )
+    manual_schedule = config.get_manual_schedule(name)
     
-    return ManualCycleSchedule(markers)
+    return ManualCycleSchedule(manual_schedule)
 
 
 class JobConfig:
@@ -418,7 +410,7 @@ class AppConfig:
             e.add_note('key default_job')
             raise e
 
-    def get_schedule(self,schedule_name: str) -> ScheduleConfig | None:
+    def get_schedule(self,schedule_name: str) -> Schedule | None:
         # step 1, get the schedule table
         try:
             schedules = (
@@ -433,9 +425,11 @@ class AppConfig:
         # step 2, get the schedule from it
         return (
             Maybe(schedules.get(schedule_name))
-            .map(lambda x: ScheduleConfig(x, self))
+            .map(lambda x: ScheduleConfig(x))
+            .map(lambda x: parse_schedule_from_config(x,schedule_name,self))
             .unwrap()
         )
+    
 
     def get_job_config(self, job_name: str) -> JobConfig | None:
         try:
@@ -481,6 +475,27 @@ class AppConfig:
             raise e
 
 
+    def get_manual_schedule(self, schedule_name: str) -> List[date]:
+        try:
+            manual_schedule = (
+                Maybe(self.raw.get('manual_schedule_history'))
+                .map(lambda x: x if isinstance(x,dict) else raise_type_error('manual_schedule_history',type(x).__name__,'dict'))
+                .unwrap_or(dict)
+            )
+        except Exception as e:
+            e.add_note('table manual_schedule_history')
+            raise e
+
+        
+        return (Maybe(manual_schedule.get(schedule_name))
+            .map(lambda x: x if isinstance(x,dict) else raise_type_error('manual_schedule_history.[job_name]',type(x).__name__,'dict'))
+            .map(lambda x: x.get('markers',[]))
+            .map(lambda x: x if isinstance(x,list) else raise_type_error('markers',type(x).__name__,'list'))
+            .map(lambda x: x if is_list_dates(x) else raise_type_error('markers',type(x).__name__,'list of dates'))
+            .map(lambda x: x if is_date_list_sorted(x) else raise_value_error('markers',x,'the list to be sorted'))
+            .unwrap_or(list)
+        )
+        
 
 
         # try:

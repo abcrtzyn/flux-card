@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Iterable, Iterator, List, Set, Tuple
 from zoneinfo import ZoneInfo
 
+from fluxcard.schedules import Schedule
+
 from .config import AppConfig, MacroConfig
 from .error import FluxCardCommandLineError, FluxCardError, FluxCardInputError, print_terminal_error
 from .output_registry import print_formatters
@@ -207,7 +209,7 @@ def get_period_parameter(args: ParsedArgs, macro_config: MacroConfig | None) -> 
     
     return None
 
-def get_schedule(job_filter: Set[str] | None, config: AppConfig | None):
+def get_schedule(job_filter: Set[str] | None, config: AppConfig | None) -> Schedule:
     if job_filter is None:
         raise FluxCardInputError('job filter is required in period mode and each of the jobs schedules must match')
     if config is None:
@@ -226,7 +228,7 @@ def get_schedule(job_filter: Set[str] | None, config: AppConfig | None):
     schedule_key = schedules.pop()
     if schedule_key is None:
         raise FluxCardInputError('in period mode, the job(s) filtered by must have a schedule')
-    schedule_config = config.get_schedule(schedule_key)
+    schedule = config.get_schedule(schedule_key)
     if schedule is None:
         raise FluxCardInputError(f"could not find schedule '{schedule_key}' in the config")
 
@@ -381,23 +383,10 @@ def main():
             start_date, end_date = get_cli_date_filter(args)
         elif period := get_period_parameter(args,macro_config):
             schedule = get_schedule(job_filter,config)
-
-
+            start_date, end_date = schedule.get_date_filter(period)
         else:
-            
+            start_date, end_date = None,None
 
-       
-        # CURSOR
-        # get_date_filters is doing too much. I would say we should get the schedule used by period mode first, except we have to know which date filtering mode we are using first...
-
-        # the addition here is to figure out which mode we are in, cli date, cli period, macro period
-        # if we are in cli date, schedule = None
-        # otherwise, go get the schedule, convert from schedule config to actual schedule
-        # then we can plug that into other things, including the get_date_filters function.
-
-
-
-        start_date, end_date = get_date_filters(args, macro_config, job_filter, config)
         outputs = get_outputs(args, macro_config)
     except FluxCardError as e:
         print_terminal_error(e)
