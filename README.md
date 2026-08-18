@@ -22,11 +22,17 @@ Lots of setup steps here, please follow them carefully.
 2. download the fluxcard package (maybe you already did)
 3. Choose your python environment option
 
-**install the package globally**, this makes commands `fluxcard` and `flux` availabe anywhere on your system.
+**install the package globally**, this makes commands `fluxcard` and `flux` available anywhere on your system. You can use pipx or pip or uv or something else.
 ```sh
 cd path/to/fluxcard_repo
+
 pipx install .
+# or
+pip3 install --user . # most users use the user option, which is better for PATH management.
+# or
+uv tool install .
 ```
+
 **install the package in a venv** inside the working folder, you will have to activate the venv every time you want to use it
 ```sh
 python3 -m venv .venv
