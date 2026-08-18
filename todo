@@ -1,4 +1,3 @@
-- document program generated params, show that these optional parameters are allowed by custom functions
 - grouped by pay period summary output format and its requirements
     - Implementation wise, how should this data be grouped, what pay period function is needed?
     - Implement that function for each schedule
