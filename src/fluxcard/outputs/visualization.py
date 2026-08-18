@@ -8,6 +8,7 @@
 
 
 
+from datetime import date
 from math import ceil
 from typing import List, TextIO
 
@@ -27,15 +28,15 @@ sections_per_day = ceil(86400 / section_length)
 
 
 @register_formatter("visualization")
-def render_visualization(file: TextIO, data: List[Segment],fill_in: bool = True):
+def render_visualization(file: TextIO, data: List[Segment],fill_in: bool = True, use_date_filter: bool = False, filter_start_date: date | None = None, filter_end_date: date | None = None):
     
     grouped = group_by_date(data)
 
-    # Get the first key (Minimum Date)
-    min_date = next(iter(grouped))
+    # Get the first key (Minimum Date) or use the start date
+    min_date = filter_start_date if use_date_filter and filter_start_date is not None else next(iter(grouped))
 
-    # Get the last key (Maximum Date)
-    max_date = next(reversed(grouped))
+    # Get the last key (Maximum Date) or use the end date
+    max_date = filter_end_date if use_date_filter and filter_end_date is not None else next(reversed(grouped))
     
     date_set = daterange(min_date,max_date) if fill_in else grouped
 

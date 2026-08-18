@@ -1,8 +1,3 @@
-- program created paramaters
-    - test with visualization function and date filter parameters
-    - need to wire those parameters through the execute output function
-    - then check if the function actually needs them, should we inspect again on run or have the parsing check inspect figure this out?
-- document that, show that these optional parameters are allowed by custom functions
 - grouped by pay period summary output format and its requirements
     - Implementation wise, how should this data be grouped, what pay period function is needed?
     - Implement that function for each schedule
