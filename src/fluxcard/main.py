@@ -253,7 +253,10 @@ def get_schedule(job_filter: Set[str] | None, config: AppConfig | None) -> Sched
 
 def create_output_runner_common(dest: Path | Literal['stdout'], form: str, extra_kwargs: TomlTable) -> OutputRunner:
     # get the formatter
-    formatter = get_formatter(form)
+    try:
+        formatter = get_formatter(form)
+    except KeyError as e:
+        raise FluxCardInputError(e.args[0]) from e
 
     # check the signature
     sig = inspect.signature(formatter)
@@ -293,7 +296,6 @@ def create_output_runner_from_config(output_config: OutputConfig) -> OutputRunne
 
 
 def get_outputs(args: ParsedArgs, macro_config: MacroConfig | None) -> List[OutputRunner]:
-    
     # if args.outputs, then we use the single output definde there
     if args.output is not None:
         return [create_output_runner_from_args(args.output)]
