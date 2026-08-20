@@ -30,4 +30,4 @@ def output_card(file: TextIO, data: List[Segment]):
             file.write(f"\t{seg.inTime.strftime('%-I:%M %p')}\t{seg.outTime.strftime('%-I:%M %p')}\t{str(seg.elapsed)}\n")
             
     file.write(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-    file.write(f"Total\t\t\t{timedelta_HH_mm_ss(total_hours)}\n\n\n")
+    file.write(f"Total\t\t\t{timedelta_HH_mm_ss(total_hours)}\n")

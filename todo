@@ -4,7 +4,7 @@
     - Pass the schedule object or just that function into the output?
     - Create a command pay period grouping function (probably)
     - make the output format
+- documentation script for the output gallery, running example data. Probably not using a documentation library for this but writing my own custom format for this documentation. Maybe I can tap into the python docs system though.
 
 Anytime in here too
-- add documentation on the already implemented function formats and their options.
 - processors auto documentation lazydocs
