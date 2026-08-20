@@ -464,6 +464,9 @@ def main():
         
         outputs = get_outputs(args, macro_config)
 
+        if len(outputs) == 0:
+            raise FluxCardInputError('No outputs given, either specify through -o dest format or through -m macro that is defined in your config')
+
 
     except FluxCardError as e:
         print_terminal_error(e)
