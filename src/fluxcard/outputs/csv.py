@@ -18,7 +18,8 @@ def output_csv(file: TextIO, data: List[Segment],job_column: bool = True):
         out_time = f'{seg.outTime.strftime('%-I:%M:%S%p%z')}'
         elapsed = f'{timedelta_HH_mm_ss(seg.elapsed)}'
         job = seg.job
-        description = f'"{seg.description}"'
+        # making sure to escape any double quotes, newlines stay the same
+        description = f'"{seg.description.replace('"','""')}"'
 
         file.write(f'{date},{in_time},{out_time},{elapsed},{f'{job},' if job_column else ''}{description}\n')
 

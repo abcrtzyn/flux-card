@@ -53,9 +53,12 @@ date,in,out,elapsed,job,description
 
 Outputs a nice text format time card. For each day worked, the total time on that day is shown as well as each clock in time, time worked, and description for each segment.
 
-Parameters: This function has no parameters
-<!-- | name | type | default | description |
-| :--- | :--- | :---    | :---        | -->
+Parameters:
+| name | type | default | description |
+| :--- | :--- | :---    | :---        |
+| single_line_description | bool | False | If true, prints the description on a single line, if false, uses multiple lines |
+| single_line_newline_delemiter | str | `";"` | When using single line description, what string to replace newlines with |
+
 
 ```txt
 Mon, Feb 10 2025   3:15:00
@@ -88,8 +91,6 @@ Parameters: This function has no parameters
 ## Visualization [visualization]
 
 Outputs a terminal visualization showing roughly the hours worked in a graphical style. Filled in boxes show hours worked.
-
-
 
 
 Parameters:

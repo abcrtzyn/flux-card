@@ -379,7 +379,7 @@ def parse_timecard_segment(lines: List[str], loc_info: Tuple[Path,int], tz: Zone
     job = lines[0]
     in_line = lines[1]
     out_line = lines[2]
-    description = ";;".join(lines[3:])
+    description = "\n".join(lines[3:])
     local_in = parse_timestamp_line(in_line,(loc_info[0],loc_info[1]+1),'>').astimezone(tz)
     local_out = parse_timestamp_line(out_line,(loc_info[0],loc_info[1]+2),'<').astimezone(tz)
     
