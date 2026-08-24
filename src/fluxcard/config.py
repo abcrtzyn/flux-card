@@ -347,8 +347,8 @@ class AppConfig:
             raise e
 
     def get_timecard_path(self) -> Path | None:
-        """get the resolved input path from the config file
-        returns None if key not given
+        """get the resolved input path from the config file.
+        returns None if key not given.
         raises FluxCardConfigTypeError if the value is not a string"""
 
         return (

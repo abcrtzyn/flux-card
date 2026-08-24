@@ -224,24 +224,27 @@ def get_config(args: ParsedArgs) -> AppConfig | None:
     assert False, 'unreachable'
 
 
-def get_input_path(args: ParsedArgs, config: AppConfig | None):
+def get_input_path(args: ParsedArgs, config: AppConfig | None) -> Path:
+    """Get the input path from either the config file or the command line args.
+    raises FluxCardInputError if the input is not specified
+    raises FluxCardConfigTypeError if the path in the config is not a string"""
+
     # get the input path from either command line args or config
     # these paths are already abs. paths
     if args.timecard_path is not None:
         input_path = args.timecard_path
+        logger.info(f"input path given by command line: {input_path}")
     else:
         input_path = config.get_timecard_path() if config is not None else None
-            
+        if input_path is not None:
+            logger.info(f"input path given by config: {input_path}")
+        
     # check if the path is given, and if we can read from it.
     if input_path is None:
-        raise FluxCardInputError('"timecard_path" must be specified in config or given as a command line argument')
-    if not input_path.exists():
-        raise FluxCardInputError(f"file not found: {input_path}")
+        raise FluxCardInputError('"timecard_path" must be specified in config or given as a command line argument -i')
     if not input_path.is_file():
-        raise FluxCardInputError(f"timecard file is not a file: {input_path}")
-    if not os.access(input_path, os.R_OK):
-        raise FluxCardInputError(f"Do not have permission to read file: {input_path}")
-    # good!
+        raise FluxCardInputError(f"The path {input_path} is not a valid file")
+    # good enough for now.
     return input_path
 
 def get_output_timezone(args: ParsedArgs, config: AppConfig | None) -> ZoneInfo:
