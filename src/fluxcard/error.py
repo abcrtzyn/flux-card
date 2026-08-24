@@ -4,10 +4,17 @@ import sys
 class FluxCardError(Exception): """Exceptions that a user should see, not a crash"""
 class FluxCardInputError(FluxCardError): """Expections for all data validation and parsing"""
 
+class FluxCardFieldRequiredError(FluxCardInputError): 
+    """Exceptions when a field is required in config or command line"""
+    # field: str
+    # cli_flag: str
+    # config_option: str
+
+
 class FluxCardConfigError(FluxCardInputError): """Exceptions that occur when parsing a config file"""
 class FluxCardConfigTypeError(FluxCardConfigError): """Wrong type, could not parse"""
 class FluxCardConfigValueError(FluxCardConfigError): """Correct type, but invalid value"""
-class FluxCardConfigFieldRequiredError(FluxCardConfigError): """Correct type, but invalid value"""
+# class FluxCardConfigFieldRequiredError(FluxCardConfigError): """Correct type, but invalid value"""
 
 class FluxCardCommandLineError(FluxCardInputError): """Could not parse the command line arguments"""
 
@@ -28,8 +35,8 @@ def print_terminal_error(e: FluxCardError) -> None:
         print(f"{BOLD}Invalid type in config{RESET}", file=sys.stderr)
     elif isinstance(e, FluxCardConfigValueError):
         print(f"{BOLD}Invalid value in config{RESET}", file=sys.stderr)
-    elif isinstance(e, FluxCardConfigFieldRequiredError):
-        print(f"{BOLD}Missing required value in config{RESET}", file=sys.stderr)
+    elif isinstance(e, FluxCardFieldRequiredError):
+        print(f"{BOLD}Missing required value in input{RESET}", file=sys.stderr)
     elif isinstance(e, FluxCardConfigError):
         print(f"{BOLD}Error in config{RESET}", file=sys.stderr)
     elif isinstance(e, FluxCardCommandLineError):

@@ -11,7 +11,7 @@ import tomllib
 from typing import Any, Callable, Dict, List, Literal, NoReturn, Sequence, TypeGuard, TypeVar, Union, cast
 
 
-from .error import FluxCardConfigFieldRequiredError, FluxCardConfigTypeError, FluxCardConfigValueError
+from .error import FluxCardConfigTypeError, FluxCardConfigValueError, FluxCardFieldRequiredError
 from .monads import Box, Maybe
 from .output_registry import RegistrationTracker
 from .schedules import DaysCycleSchedule, ManualCycleSchedule, MonthCycleSchedule
@@ -56,7 +56,7 @@ def raise_value_error(key: str, value: Any, error: str) -> NoReturn:
     raise FluxCardConfigValueError(f'value error at {key}, expected {error}, but got {value}')
 
 def raise_required_field_error(key: str) -> NoReturn:
-    raise FluxCardConfigFieldRequiredError(f'{key} field required')
+    raise FluxCardFieldRequiredError(f'{key} field required')
 
 from typing import Callable, TypeVar, Any
 
@@ -359,17 +359,17 @@ class AppConfig:
         )
 
 
-    def get_output_timezone(self):
-        try:
-            return (
-                Maybe(self.raw.get('output_timezone'))
-                .map(lambda x: x if isinstance(x,str) else raise_type_error('output_timezone',type(x).__name__,'str'))
-                .unwrap()
-            )
-        except Exception as e:
-            e.add_note('key output_timezone')
-            raise e
-
+    def get_output_timezone(self) -> str | None:
+        """get the timezone string from the config file
+        returns None if key is not given.
+        raises FluxCardConfigTypeError if the value is not a string"""
+        
+        return (
+            Maybe(self.raw.get('output_timezone'))
+            .map(lambda x: x if isinstance(x,str) else raise_type_error('output_timezone',type(x).__name__,'str'))
+            .unwrap()
+        )
+        
     def get_default_job(self):
         try:
             return (

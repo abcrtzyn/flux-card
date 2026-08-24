@@ -12,12 +12,12 @@ import re
 import sys
 from tomllib import TOMLDecodeError
 from typing import Any, Dict, Iterable, Iterator, List, Literal, Set, Tuple, overload
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fluxcard.schedules import Schedule
 
 from fluxcard.config import AppConfig, MacroConfig, OutputConfig, ScheduleConfig, TomlTable, parse_days_cycle_from_dict, parse_manual_cycle, parse_month_cycle_from_dict
-from fluxcard.error import FluxCardCommandLineError, FluxCardConfigValueError, FluxCardError, FluxCardInputError, print_terminal_error
+from fluxcard.error import FluxCardCommandLineError, FluxCardConfigValueError, FluxCardError, FluxCardFieldRequiredError, FluxCardInputError, print_terminal_error
 from fluxcard.output_registry import get_formatter, print_formatters
 from fluxcard.output_runners import FileRunner, OutputRunner, StdoutRunner
 from fluxcard.settings_parsers import OutputSettingsAction
@@ -226,7 +226,8 @@ def get_config(args: ParsedArgs) -> AppConfig | None:
 
 def get_input_path(args: ParsedArgs, config: AppConfig | None) -> Path:
     """Get the input path from either the config file or the command line args.
-    raises FluxCardInputError if the input is not specified
+    raises FluxCardFieldRequiredError if the input is not specified
+    raises FluxCardInputError if the input file is not a file
     raises FluxCardConfigTypeError if the path in the config is not a string"""
 
     # get the input path from either command line args or config
@@ -241,22 +242,34 @@ def get_input_path(args: ParsedArgs, config: AppConfig | None) -> Path:
         
     # check if the path is given, and if we can read from it.
     if input_path is None:
-        raise FluxCardInputError('"timecard_path" must be specified in config or given as a command line argument -i')
+        raise FluxCardFieldRequiredError('"timecard_path" must be specified in config or given as a command line argument -i')
     if not input_path.is_file():
         raise FluxCardInputError(f"The path {input_path} is not a valid file")
     # good enough for now.
     return input_path
 
 def get_output_timezone(args: ParsedArgs, config: AppConfig | None) -> ZoneInfo:
+    """Get timezone information from the conmmand line or config
+    raises FluxCardFieldRequiredError if the timezone is not specified
+    raises FluxCardConfigTypeError if the timezone in the config is not a string
+    raises FluxCardInputError if the timezone is not a valid timezone"""
+
     if args.output_timezone is not None:
         tz_str = args.output_timezone
+        logger.info(f'output timezone specified by command line: {tz_str}')
     else:
         tz_str = config.get_output_timezone() if config is not None else None
-    
+        if tz_str is not None:
+            logger.info(f'output timezone specified by config: {tz_str}')
+        
     if tz_str is None:
-        raise FluxCardInputError('no output timezone specified in cli or config, please specify a timezone')
+        raise FluxCardFieldRequiredError('"output_timezone" must be specified in config or given as a command line argument -tz')
 
-    return ZoneInfo(tz_str)
+    try:
+        return ZoneInfo(tz_str)
+    except ZoneInfoNotFoundError:
+        raise FluxCardInputError(f"time zone '{tz_str}' is unknown")
+
 
 def get_macro_config(args: ParsedArgs, config: AppConfig | None) -> MacroConfig | None:
     if args.macro is None:
