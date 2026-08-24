@@ -347,16 +347,17 @@ class AppConfig:
             raise e
 
     def get_timecard_path(self) -> Path | None:
-        try:
-            return (
-                Maybe(self.raw.get('timecard_path'))
-                .map(lambda x: x if isinstance(x,str) else raise_type_error('timecard_path',type(x).__name__,'str'))
-                .map(lambda x: resolve_config_relative_path(x,self.config_path))
-                .unwrap()
-            )
-        except Exception as e:
-            e.add_note('key timecard_path')
-            raise e
+        """get the resolved input path from the config file
+        returns None if key not given
+        raises FluxCardConfigTypeError if the value is not a string"""
+
+        return (
+            Maybe(self.raw.get('timecard_path'))
+            .map(lambda x: x if isinstance(x,str) else raise_type_error('timecard_path',type(x).__name__,'str'))
+            .map(lambda x: resolve_config_relative_path(x,self.config_path))
+            .unwrap()
+        )
+
 
     def get_output_timezone(self):
         try:
