@@ -37,13 +37,23 @@ class DateFilterMode(Enum):
 # this goes in the rest of the files
 logger = logging.getLogger(__name__)
 
-def setup_logging():
+def setup_logging(verbosity_score: int):
     """Initializes global logging to print cleanly to the terminal screen."""
+
+    if verbosity_score == 0:
+        target_level = logging.ERROR  # Silent default
+    elif verbosity_score == 1:
+        target_level = logging.WARNING  # -v
+    elif verbosity_score == 2:
+        target_level = logging.INFO  # -vv
+    else:
+        target_level = logging.DEBUG  # -vvv or higher
+
     # Define a clean layout for developers reading logs
     log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     
     logging.basicConfig(
-        level=logging.DEBUG,               # Capture everything down to DEBUG
+        level=target_level,
         format=log_format,
         datefmt="%Y-%m-%d %H:%M:%S",
         stream=sys.stdout                  # Send standard logs to stdout
@@ -69,6 +79,7 @@ class ParsedArgs:
     macro: str | None
     print_config: bool
     list_formats: bool
+    verbose: int
 
 
 
@@ -96,6 +107,8 @@ def parse_args() -> ParsedArgs:
     parser.add_argument("--print-config",action="store_true", help="Print resolved configuration and exit")
     parser.add_argument("--list-formats",action="store_true", help="Print the list of formatter functions and exit")
 
+    parser.add_argument("-v","--verbose",action="count",default=0,help="Increase logging output verbosity: -v (warn), -vv (info), -vvv (debug).")
+
     raw_args = parser.parse_args()
 
     return ParsedArgs(
@@ -110,6 +123,7 @@ def parse_args() -> ParsedArgs:
         macro=raw_args.macro,
         print_config=raw_args.print_config,
         list_formats=raw_args.list_formats,
+        verbose=raw_args.verbose
     )
 
 
@@ -530,7 +544,7 @@ def main():
     try:
         args = parse_args()
 
-        setup_logging()
+        setup_logging(args.verbose)
 
         config = get_config(args)
         

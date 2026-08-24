@@ -61,17 +61,18 @@ This section goes through details of all parameters that can be set on the comma
 
 ### Command Line and top level config options
 
-| Option            | CLI Flag         | Config Key        | Default / Action on not set |
-| :---              | :---             | :---              | :---                        |
-| **Alt Config**    | `-c [path]`      |                   | <cwd>/config.toml           |
-| **Start Date**    | `[param 1]`      |                   | No minimum filter applied   |
-| **End Date**      | `[param 2]`      |                   | No maximum filter applied   |
-| **Print Config**  | `--print-config` |                   | Program runs in full        |
-| **List Formats**  | `--list-formats` |                   | Program runs                |
-| **Macro**         | `-m [macro]`     |                   | No macro used               |
-| **Input File**    | `-i [path]`      | `input_file`      | *Required (Error)*          |
-| **Timezone**      | `-tz [zone]`     | `output_timezone` | *Required (Error)*          |
-| **Custom Output** | N/A              | `output_plugins`  | No action                   |
+| Option            | CLI Flag         | Config Key        | Default / Action on not set   |
+| :---              | :---             | :---              | :---                          |
+| **Alt Config**    | `-c [path]`      |                   | <cwd>/config.toml             |
+| **Start Date**    | `[param 1]`      |                   | No minimum filter applied     |
+| **End Date**      | `[param 2]`      |                   | No maximum filter applied     |
+| **Print Config**  | `--print-config` |                   | Program runs in full          |
+| **List Formats**  | `--list-formats` |                   | Program runs                  |
+| **Macro**         | `-m [macro]`     |                   | No macro used                 |
+| **Input File**    | `-i [path]`      | `input_file`      | *Required (Error)*            |
+| **Timezone**      | `-tz [zone]`     | `output_timezone` | *Required (Error)*            |
+| **Custom Output** | N/A              | `output_plugins`  | No action                     |
+| **Verbosity**     | `-v`             |                   | Increases the verbosity level |
 
 #### Alternate Config
 
@@ -123,6 +124,13 @@ You can write your own output formats and load them in dynamically. Specify the 
 
 - **Config**: `output_plugins = ["custom.py","custom2.py"]`
 
+#### Verbosity
+
+Changes the logging level of the program. The number of occurances of the flag increases the log level.
+
+One occurance (`-v`) shows warnings, two (`-vv`) shows infos, and three (`-vvv`) shows debugs.
+
+- **CLI**: `-v` or `--verbose`
 
 
 ### Macros and macro options
