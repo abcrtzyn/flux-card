@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 
+
+# this loads all the output formats into the registry
 import argparse
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta, date # pyright: ignore[reportPrivateUsage]
+from datetime import date, datetime, time, timedelta
 from enum import Enum, auto
+from importlib.util import module_from_spec, spec_from_file_location
 import inspect
 import logging
 import os
@@ -14,14 +17,13 @@ from tomllib import TOMLDecodeError
 from typing import Any, Dict, Iterable, Iterator, List, Literal, Set, Tuple, overload
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fluxcard.schedules import Schedule
-
 from fluxcard.config import AppConfig, MacroConfig, OutputConfig, ScheduleConfig, TomlTable, parse_days_cycle_from_dict, parse_manual_cycle, parse_month_cycle_from_dict
 from fluxcard.error import FluxCardCommandLineError, FluxCardConfigValueError, FluxCardError, FluxCardFieldRequiredError, FluxCardInputError, print_terminal_error
-from fluxcard.output_registry import get_formatter, print_formatters
+from fluxcard.output_registry import RegistrationTracker, get_formatter, print_formatters
 from fluxcard.output_runners import FileRunner, OutputRunner, StdoutRunner
-from fluxcard.settings_parsers import OutputSettingsAction
+from fluxcard.schedules import Schedule
 from fluxcard.segments import Segment
+from fluxcard.settings_parsers import OutputSettingsAction
 
 # this loads all the output formats into the registry
 from . import outputs  # pyright: ignore[reportUnusedImport]
@@ -223,13 +225,48 @@ def get_config(args: ParsedArgs) -> AppConfig | None:
 
     assert False, 'unreachable'
 
+def load_plugin(file_path: Path, index: int) -> None:
+    
+    if not file_path.exists():
+        raise FluxCardConfigValueError(f'unknown file path {file_path}')
+
+    # using an index value to make sure that modules are uniquely named
+    module_name = f"_dynamic_plugin_{file_path.stem}_{index}"
+
+    tracker = RegistrationTracker()
+
+    tracker.begin()
+
+    try:
+        spec = spec_from_file_location(module_name, str(file_path))
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Could not load specifications for: {file_path}")
+
+        module = module_from_spec(spec)
+        sys.modules[module_name] = module
+
+        # run the module
+        spec.loader.exec_module(module)
+
+    finally:
+        # this removes it from sys.modules because we don't need it to be there.
+        if module_name in sys.modules:
+            del sys.modules[module_name]
+    
+    added_formatters = tracker.finish()
+    if len(added_formatters) > 0:
+        added_str = ', '.join(f"'{k}'" for k in sorted(added_formatters))
+        print(f'loaded module at {file_path} and added formatter{'s' if len(added_formatters) > 1 else ''} {added_str}')
+    else:
+        print(f'warning: loaded module at {file_path} but no formatters were registered')
+
+
 
 def get_input_path(args: ParsedArgs, config: AppConfig | None) -> Path:
     """Get the input path from either the config file or the command line args.
     raises FluxCardFieldRequiredError if the input is not specified
     raises FluxCardInputError if the input file is not a file
     raises FluxCardConfigTypeError if the path in the config is not a string"""
-
     # get the input path from either command line args or config
     # these paths are already abs. paths
     if args.timecard_path is not None:
@@ -563,6 +600,11 @@ def main():
         setup_logging(args.verbose)
 
         config = get_config(args)
+
+        if config is not None:
+            plugins = config.get_output_plugins()
+            for i,p in enumerate(plugins):
+                load_plugin(p,i)
         
         if args.list_formats:
             print_formatters()
