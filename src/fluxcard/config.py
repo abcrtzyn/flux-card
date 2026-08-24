@@ -4,16 +4,13 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime, time
-from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
-import sys
 import tomllib
 from typing import Any, Callable, Dict, List, Literal, NoReturn, Sequence, TypeGuard, TypeVar, Union, cast
 
 
 from .error import FluxCardConfigFieldRequiredError, FluxCardConfigTypeError, FluxCardConfigValueError
 from .monads import Box, Maybe
-from .output_registry import RegistrationTracker
 from .schedules import DaysCycleSchedule, ManualCycleSchedule, MonthCycleSchedule
 
 # Define the allowed scalar types from the TOML specification
@@ -281,47 +278,6 @@ class MacroConfig:
             e.add_note('key outputs')
             raise e
     
-
-def load_plugin(path: str, index: int, config_path: Path) -> None:
-    file_path = resolve_config_relative_path(path, config_path)
-
-    if not file_path.exists():
-        raise FluxCardConfigValueError(f'unknown file path {file_path}')
-
-    # using an index value to make sure that modules are uniquely named
-    module_name = f"_dynamic_plugin_{file_path.stem}_{index}"
-
-    tracker = RegistrationTracker()
-
-    tracker.begin()
-
-    try:
-        spec = spec_from_file_location(module_name, str(file_path))
-        if spec is None or spec.loader is None:
-            raise ImportError(f"Could not load specifications for: {file_path}")
-
-        module = module_from_spec(spec)
-        sys.modules[module_name] = module
-
-        # run the module
-        spec.loader.exec_module(module)
-
-    finally:
-        # this removes it from sys.modules because we don't need it to be there.
-        if module_name in sys.modules:
-            del sys.modules[module_name]
-    
-    added_formatters = tracker.finish()
-    if len(added_formatters) > 0:
-        added_str = ', '.join(f"'{k}'" for k in sorted(added_formatters))
-        print(f'loaded module at {file_path} and added formatter{'s' if len(added_formatters) > 1 else ''} {added_str}')
-    else:
-        print(f'warning: loaded module at {file_path} but no formatters were registered')
-
-
-
-
-
 
 @dataclass(frozen=True)
 class AppConfig:
