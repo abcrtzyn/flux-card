@@ -483,12 +483,10 @@ class AppConfig:
 
     @classmethod
     def load(cls, path: Path) -> "AppConfig":
+        """Create an AppConfig class given an validated file path.
+        raises OSError (normal file open errors) if the file can not be opened for any reason
+        raises TomlDecodeError if the file is not Toml format"""
         with path.open("rb") as f:
             raw = cast(TomlTable,tomllib.load(f))
-        try:
-            return cls(path,raw)
-        except Exception as e:
-            e.add_note(f'File {str(path)}')
-            raise e
-        
-        assert False, 'unreachable'
+
+        return cls(path,raw)

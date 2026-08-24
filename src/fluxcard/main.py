@@ -5,9 +5,13 @@ from dataclasses import dataclass
 from datetime import datetime, time, timedelta, date # pyright: ignore[reportPrivateUsage]
 from enum import Enum, auto
 import inspect
+import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Literal, Set, Tuple
+import re
+import sys
+from tomllib import TOMLDecodeError
+from typing import Any, Dict, Iterable, Iterator, List, Literal, Set, Tuple, overload
 from zoneinfo import ZoneInfo
 
 from fluxcard.schedules import Schedule
@@ -30,8 +34,25 @@ class DateFilterMode(Enum):
     PERIOD = auto()
     NONE = auto()
 
+# this goes in the rest of the files
+logger = logging.getLogger(__name__)
+
+def setup_logging():
+    """Initializes global logging to print cleanly to the terminal screen."""
+    # Define a clean layout for developers reading logs
+    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    
+    logging.basicConfig(
+        level=logging.DEBUG,               # Capture everything down to DEBUG
+        format=log_format,
+        datefmt="%Y-%m-%d %H:%M:%S",
+        stream=sys.stdout                  # Send standard logs to stdout
+    )
+
 
 class FluxCardArgumentParser(argparse.ArgumentParser):
+    """Subclass to change the error type to Fluxcard Error"""
+
     def error(self, message: str):
         raise FluxCardCommandLineError(f"{message}")
 
@@ -52,18 +73,21 @@ class ParsedArgs:
 
 
 def parse_args() -> ParsedArgs:
+    """Parse command line arguments using ArgumentParser
+    raises FluxCardCommandLineError"""
+
     parser = FluxCardArgumentParser(prog="fluxcard",description="Summarize clock in sessions from the input file.\nUses settings from command line and config.toml")
 
     parser.add_argument("-c","--config",dest="alt_config", type=lambda x: Path(x).expanduser().resolve() if x else None, help="Alternate config file path")
 
     parser.add_argument("-i", "--input", dest="timecard_path", type=lambda x: Path(x).expanduser().resolve() if x else None, help="Path to input file")
-    parser.add_argument("-tz", "--timezone", dest="output_timezone", help="timezone to format output")
+    parser.add_argument("-tz", "--timezone", type=str, dest="output_timezone", help="timezone to format output")
     
-    parser.add_argument("-j","--job",dest="job_filter",help='Job(s) to filter by seperated by comma "WebDev,Gardening". Clear filter set by config with "_". One job is required in period mode')
+    parser.add_argument("-j","--job",dest="job_filter",type=str, help='Job(s) to filter by seperated by comma "WebDev,Gardening". Clear filter set by config with "_". One job is required in period mode')
 
 
     parser.add_argument("start_date", nargs="?", type=parse_cli_start_date, help="Optinal start date, can use _ as a placeholder (YYYY-MM-DD)")
-    parser.add_argument("end_date", nargs="?", type=date.fromisoformat, help="Optinal end date, not including the day itself (YYYY-MM-DD)")
+    parser.add_argument("end_date", nargs="?", type=parse_cli_end_date, help="Optinal end date, not including the day itself (YYYY-MM-DD)")
 
     parser.add_argument("-p", "--period", type=int, help="Period index (0=current, 1=previous, etc.), replaces date filtering mode")
     parser.add_argument("-o", "--output",nargs=2,action=OutputSettingsAction, metavar=("DESTINATION","FORMAT"), help="where and what to output. Destination can be 'stdout' or a file path (absolute or cwd relative), format can be any string that is has an output function.")
@@ -90,6 +114,7 @@ def parse_args() -> ParsedArgs:
 
 
 def parse_cli_start_date(date_str: str|None):
+    """Parse the start date from isoformat or '_'. raises ArgumentTypeError (used by argparse)"""
     if date_str is None or date_str in ("_", ""):
         return None
     try:
@@ -97,21 +122,93 @@ def parse_cli_start_date(date_str: str|None):
     except ValueError:
         raise argparse.ArgumentTypeError(f"invalid value '{date_str}', valid dates are 'YYYY-MM-DD' or '_'.")
 
-def get_config(args: ParsedArgs) -> AppConfig | None:
-    # check for alternate config parameter
-    if args.alt_config is not None:
-        alt_config_path = Path(args.alt_config).resolve()
-        if not alt_config_path.exists():
-            raise FluxCardInputError(f'config file at "{alt_config_path}" does not exist')
-        return AppConfig.load(alt_config_path)
-    # check cwd for config file
-    config_input_path = Path.cwd() / "config.toml"
-    if config_input_path.exists():
-        return AppConfig.load(config_input_path)
-    # can also check places like ~/.config/fluxcard or repo root
+def parse_cli_end_date(date_str: str|None):
+    """Parse the end date from isoformat. raises ArugmentTypeError (used by argparse)"""
+    if date_str is None or date_str in (""):
+        return None
+    try:
+        return date.fromisoformat(date_str)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid value '{date_str}', valid dates are 'YYYY-MM-DD'")
+
+@overload
+def _check_and_load(path: Path, is_explicit: Literal[True]) -> AppConfig: ...
+
+@overload
+def _check_and_load(path: Path, is_explicit: Literal[False]) -> AppConfig | None: ...
+
+def _check_and_load(path: Path, is_explicit: bool) -> AppConfig | None:
+    """Load the config at path. 
+    If is_explicit is True, will return AppConfig or raise an FluxCardInputError if the file can not be read
+    If is_explicit is False, will return AppConfig or return None if the file can not be read
     
-    # if no standard, use empty config
-    return None
+    In either case, can raise TOMLDecodeError if the decoding is not successful"""
+
+    try:
+        if path.is_dir():
+            raise IsADirectoryError("Target path is a directory, not a file.")
+        data = AppConfig.load(path)
+        logger.info(f"File handle opened and parsed: '{path}'")
+        return data
+    except OSError as e:
+        # Catches FileNotFoundError, PermissionError, IsADirectoryError, etc.
+        if is_explicit:
+            raise FluxCardInputError(
+                f'Cannot read config file at "{path}": {e.strerror}'
+            )
+        logger.debug(f"Implicit file skipped. OS message: {e.strerror}")
+        return None
+
+
+def get_config(args: ParsedArgs) -> AppConfig | None:
+    """Returns an AppConfig object or None.
+    Checks for alt_config option on command line, will raise FluxCardInputError if that file is not readable
+    Otherwise uses config.toml in the current working directory, returns None if that file is not readable
+    raises FluxCardInputError if the file is not a valid TOML format"""
+
+    config_path = Path.cwd() / "config.toml"
+    try:
+        # check for alternate config parameter
+        if args.alt_config is not None:
+            config_path = args.alt_config.resolve()
+            logger.debug(f"Alternate configuration file path requested: '{config_path}'")
+            # load or raise error
+            config = _check_and_load(config_path,True)
+            logger.info(f"Successfully loaded alternate configuration file: '{config_path}'")
+            return config
+        # else, using the normal config path
+        logger.debug(f"No alternate config provided. Checking standard path: '{config_path}'")
+        # load or return None
+        config = _check_and_load(config_path,False)
+        if config is None:
+            logger.info("No configuration file found at alternate or standard locations. Proceeding with no configuration.")
+        else:
+            logger.info(f"Successfully loaded default configuration file: '{config_path}'")
+        return config
+    
+    except TOMLDecodeError as e:
+        # Could not decode the file as a TOML, this whole section is refactoring the error
+
+        # Extract line and column numbers
+        line = getattr(e, "lineno", None)
+        col = getattr(e, "colno", None)
+
+        if line is None or col is None:
+            match = re.search(r"\(at line (\d+), column (\d+)\)", str(e))
+            if match:
+                line, col = match.group(1), match.group(2)
+        
+        clickable_location = f'File "{config_path}", line {line}, col {col}'
+        error_msg = getattr(e, "msg", str(e)).split(" (at line")[0]
+
+        raise FluxCardInputError(
+            f"Could not decode the configuration file.\n"
+            f"  {clickable_location}\n"
+            f"  Decode Error: {error_msg}"
+        )
+
+    assert False, 'unreachable'
+
 
 def get_input_path(args: ParsedArgs, config: AppConfig | None):
     # get the input path from either command line args or config
@@ -432,6 +529,8 @@ def sort_by_time(segments: Iterable[Segment]) -> List[Segment]:
 def main():
     try:
         args = parse_args()
+
+        setup_logging()
 
         config = get_config(args)
         
