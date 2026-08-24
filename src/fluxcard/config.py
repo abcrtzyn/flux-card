@@ -109,6 +109,7 @@ class ScheduleConfig:
     raw: TomlTable
 
     def __init__(self, raw: TomlType):
+        """raises FluxCardConfigTypeError if raw is not a dictionary"""
         if not isinstance(raw,dict):
             raise_type_error('',type(raw).__name__,'dict')
         self.raw = raw
@@ -179,6 +180,7 @@ class JobConfig:
     raw: TomlTable
     
     def __init__(self, raw: TomlType):
+        """raises FluxCardConfigTypeError if raw is not a dictionary"""
         if not isinstance(raw,dict):
             raise_type_error('',type(raw).__name__,'dict')
         self.raw = raw
@@ -242,6 +244,7 @@ class MacroConfig:
     config_path: Path
 
     def __init__(self, raw: TomlType, config_path: Path):
+        """raises FluxCardConfigTypeError if raw is not a dictionary"""
         if not isinstance(raw,dict):
             raise_type_error('',type(raw).__name__,'dict')
         self.raw = raw
@@ -370,28 +373,29 @@ class AppConfig:
             .unwrap()
         )
         
-    def get_default_job(self):
-        try:
-            return (
-                Maybe(self.raw.get('default_job'))
-                .map(lambda x: x if isinstance(x,str) else raise_type_error('default_job',type(x).__name__,'str'))
-                .unwrap()
-            )
-        except Exception as e:
-            e.add_note('key default_job')
-            raise e
+    def get_default_job(self) -> str | None:
+        """get the default job from the config file
+        returns None if key is not given
+        raises FluxCardConfigTypeError if the value is not a string"""
 
+        return (
+            Maybe(self.raw.get('default_job'))
+            .map(lambda x: x if isinstance(x,str) else raise_type_error('default_job',type(x).__name__,'str'))
+            .unwrap()
+        )
+        
     def get_schedule(self,schedule_name: str) -> ScheduleConfig | None:
+        """get a schedule config object from the config file
+        returns None if the key is not given
+        raises FluxCardConfigTypeError if the schedules table is not a dictionary
+        raises FluxCardConfigTypeError if the schedule is not a dictionary"""
+
         # step 1, get the schedule table
-        try:
-            schedules = (
-                Maybe(self.raw.get('schedules'))
-                .map(lambda x: x if isinstance(x,dict) else raise_type_error('schedules',type(x).__name__,'dict'))
-                .unwrap_or(dict)
-            )
-        except Exception as e:
-            e.add_note('table schedules')
-            raise e
+        schedules = (
+            Maybe(self.raw.get('schedules'))
+            .map(lambda x: x if isinstance(x,dict) else raise_type_error('schedules',type(x).__name__,'dict'))
+            .unwrap_or(dict)
+        )
 
         # step 2, get the schedule from it
         return (
@@ -402,85 +406,62 @@ class AppConfig:
     
 
     def get_job_config(self, job_name: str) -> JobConfig | None:
-        try:
-            jobs = (
-                Maybe(self.raw.get('jobs'))
-                .map(lambda x: x if isinstance(x,dict) else raise_type_error('jobs',type(x).__name__,'dict'))
-                .unwrap_or(dict)
-            )
-            try:
+        """get a job config object from the config file
+        returns None if the key is not given
+        raises FluxCardConfigTypeError if the jobs table is not a dictionary
+        raises FluxCardConfigTypeError if the job is not a dictionary"""
+        jobs = (
+            Maybe(self.raw.get('jobs'))
+            .map(lambda x: x if isinstance(x,dict) else raise_type_error('jobs',type(x).__name__,'dict'))
+            .unwrap_or(dict)
+        )
 
-                return (
-                    Maybe(jobs.get(job_name))
-                    .map(JobConfig)
-                    .unwrap()
-                )
-            except Exception as e:
-                e.add_note(f'key {job_name}')
-
-        except Exception as e:
-            e.add_note('table jobs')
-            raise e
-
+        return (
+            Maybe(jobs.get(job_name))
+            .map(JobConfig)
+            .unwrap()
+        )
+        
 
     def get_macro_config(self, macro: str) -> MacroConfig | None:
-        try:
-            macros = (
-                Maybe(self.raw.get('macros'))
-                .map(lambda x: x if isinstance(x,dict) else raise_type_error('macros',type(x).__name__,'dict'))
-                .unwrap_or(dict)
-            )
-            try:
-                return (
-                    Maybe(macros.get(macro))
-                    .map(lambda x: MacroConfig(x, self.config_path))
-                    .unwrap()
-                )
-            except Exception as e:
-                e.add_note(f'key {macro}')
-                raise e
+        """get a macro config object from the config file
+        returns None if the key is not given
+        raises FluxCardConfigTypeError if the macros table is not a dictionary
+        raises FluxCardConfigTypeError if the macro is not a dictionary"""
+        
+        macros = (
+            Maybe(self.raw.get('macros'))
+            .map(lambda x: x if isinstance(x,dict) else raise_type_error('macros',type(x).__name__,'dict'))
+            .unwrap_or(dict)
+        )
 
-        except Exception as e:
-            e.add_note('table macros')
-            raise e
-
+        return (
+            Maybe(macros.get(macro))
+            .map(lambda x: MacroConfig(x, self.config_path))
+            .unwrap()
+        )
 
     def get_manual_schedule(self, schedule_name: str) -> List[date]:
-        try:
-            manual_schedule = (
-                Maybe(self.raw.get('manual_schedule_history'))
-                .map(lambda x: x if isinstance(x,dict) else raise_type_error('manual_schedule_history',type(x).__name__,'dict'))
-                .unwrap_or(dict)
-            )
-        except Exception as e:
-            e.add_note('table manual_schedule_history')
-            raise e
-
+        """get a manual schedule entries from the config file, returns a list of sorted dates.
+        returns empty list if key is not given (as it could mean no dates have been put in the schedule yet)
+        raises FluxCardConfigTypeError if manual_schedule_history table is not a dictionary
+        raises FluxCardConfigTypeError if the entry is not of the right form. markers=[dates] dates
+        raises FluxCardConfigValueError if the dates in the list are not sorted"""
+        
+        manual_schedule = (
+            Maybe(self.raw.get('manual_schedule_history'))
+            .map(lambda x: x if isinstance(x,dict) else raise_type_error('manual_schedule_history',type(x).__name__,'dict'))
+            .unwrap_or(dict)
+        )
         
         return (Maybe(manual_schedule.get(schedule_name))
-            .map(lambda x: x if isinstance(x,dict) else raise_type_error('manual_schedule_history.[job_name]',type(x).__name__,'dict'))
+            .map(lambda x: x if isinstance(x,dict) else raise_type_error(f'manual_schedule_history.{schedule_name}',type(x).__name__,'dict'))
             .map(lambda x: x.get('markers',[]))
             .map(lambda x: x if isinstance(x,list) else raise_type_error('markers',type(x).__name__,'list'))
             .map(lambda x: x if is_list_dates(x) else raise_type_error('markers',type(x).__name__,'list of dates'))
             .map(lambda x: x if is_date_list_sorted(x) else raise_value_error('markers',x,'the list to be sorted'))
             .unwrap_or(list)
         )
-        
-
-
-        # try:
-        #     manual_schedules = (
-        #         Maybe(raw.get('manual_schedule_history'))
-        #         .map(lambda x: x if isinstance(x,dict) else raise_type_error('manual_schedule_history',type(x).__name__,'dict'))
-        #         .unwrap_or(dict)
-        #     )
-        # except Exception as e:
-        #     e.add_note('table manual_schedule_history')
-        #     raise e
-
-        
-
-
 
     @classmethod
     def load(cls, path: Path) -> "AppConfig":
