@@ -52,10 +52,11 @@ def print_terminal_error(e: FluxCardError) -> None:
     if isinstance(e, FluxCardConfigError):
         print('\nError occured in this config location:')
 
-        # print out a config file traceback
-        notes = reversed(e.__notes__)
-        print(f'{YELLOW}{next(notes)}{RESET}',file=sys.stderr)
-        print(f'{YELLOW}{' ➔ '.join(notes)}{RESET}',file=sys.stderr)
+        # print out a config file tracebac
+        if hasattr(e,'__notes__'):
+            notes = reversed(e.__notes__)
+            print(f'{YELLOW}{next(notes)}{RESET}',file=sys.stderr)
+            print(f'{YELLOW}{' ➔ '.join(notes)}{RESET}',file=sys.stderr)
         
     # # Extract and format the add_note() breadcrumbs
     # if hasattr(e, "__notes__") and e.__notes__:

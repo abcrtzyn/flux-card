@@ -294,16 +294,17 @@ class AppConfig:
     # macros: Dict[str, MacroConfig] # = cast(Dict[str, MacroConfig], field(default_factory=dict))
     
     def get_output_plugins(self) -> List[Path]:
-        try:
-            return (
-                Maybe(self.raw.get('output_plugins'))
-                .map(lambda x: x if isinstance(x,list) else raise_type_error('output_plugins',type(x).__name__,'list'))
-                .map(list_for_each(with_key_note(lambda i: f'output plugin {i}',lambda i,x: resolve_config_relative_path(x, self.config_path) if isinstance(x,str) else raise_type_error(f'output_plugins.{i}',type(x).__name__,'str'))))
-                .unwrap_or(list)
-            )
-        except Exception as e:
-            e.add_note('key output_plugins')
-            raise e
+        """get the resolved path of all output plugins, returns a list of resolved paths
+        returns empty list if key is not given
+        raises FluxCardConfigTypeError if output_plugins is not a list
+        raises FluxCardConfigTypeError if a plugin is not a string"""
+    
+        return (
+            Maybe(self.raw.get('output_plugins'))
+            .map(lambda x: x if isinstance(x,list) else raise_type_error('output_plugins',type(x).__name__,'list'))
+            .map(list_for_each(lambda i,x: resolve_config_relative_path(x, self.config_path) if isinstance(x,str) else raise_type_error(f'output plugin index {i}',type(x).__name__,'str')))
+            .unwrap_or(list)
+        )
 
     def get_timecard_path(self) -> Path | None:
         """get the resolved input path from the config file.
