@@ -318,55 +318,89 @@ def get_output_timezone(args: ParsedArgs, config: AppConfig | None) -> ZoneInfo:
 
 
 def get_macro_config(args: ParsedArgs, config: AppConfig | None) -> MacroConfig | None:
+    """get the macro config of the macro specified in the command line arguments
+    retunrs MacroConfig for the macro specified
+    returns None if no macro is specified in the command line arguments
+    raises FluxCardConfigTypeError if the config file has bad typing
+    raises FluxCardInputError if the macro is not found in the config file"""
+
     if args.macro is None:
+        logger.debug("No macro given in command line args")
         return None
-    
+
+    logger.debug(f"Checking for macro {args.macro} in the config")
     mc = config.get_macro_config(args.macro) if config is not None else None
     if mc is None:
-        raise FluxCardInputError(f"'{args.macro}' is not a defined macro\ncheck your spelling, check which config file you are using, or check that it is actually defined")
+        raise FluxCardInputError(f"'{args.macro}' is not a defined macro\ncheck your spelling, or check that it is actually defined in your config file")
 
+    logger.info(f"Macro config found for macro {args.macro}")
     return mc
     
 
 def get_job_filter(args: ParsedArgs, macro_config: MacroConfig | None, config: AppConfig | None) -> Set[str] | None:
+    """Get the job filter specified by command line args, macro config, or default job
+    returns a set of jobs for a filter, or None for no filter (all)
+    raises FluxCardInputError if the value given is not allowed
+    raises FluxCardConfigTypeError if the type in the config is wrong
+    
+    """
     
     # if the command line arguments have a value, it is always taken
     if args.job_filter is not None:
         # command line arguments can be a single underscore
+        logger.debug(f'command line job filter given as "{args.job_filter}"')
+
         if args.job_filter == '_':
+            logger.info(f'job filter is set as no filter')
             return None
+        
         # else
         # Split comma-separated inputs and strip whitespace
         job_set = {item.strip() for item in args.job_filter.split(",") if item.strip()}
         if '' in job_set:
-            raise FluxCardInputError('Job filter option, check your input')
+            raise FluxCardInputError('found empty string in job filter command line option, please check your')
         if '_' in job_set:
-            raise FluxCardInputError('Not sure how to handle "_" in the job filter list. It doesn\'t make sense to set a filter and clear the filter at the same time')
+            raise FluxCardInputError("Underscore found in the job filter list, this is undefined behaviour")
+        logger.info(f'job filter is set as {job_set}')
         return job_set
+
+    logger.debug('command line job filter is not given')
 
     # check the macro config
     if macro_config is not None:
         jf = macro_config.get_job_filter()
+
+        logger.debug(f'macro config job filter given as {jf}')
+
         if isinstance(jf,str):
+            if ',' in jf:
+                logger.warning('job filter in macro config should be a list of strings, not a comma seperated string')
             if jf == '_':
                 raise FluxCardInputError('underscore not allowed in macro config job filter')
+            logger.info(f'job filter is set as {{{jf}}}')
             return {jf}
         elif isinstance(jf,list):
             sjf = set(jf)
             if '_' in sjf:
-                raise FluxCardInputError('understore not allowed in macro config job filter')
+                raise FluxCardInputError('underscore not allowed in macro config job filter')
+            logger.info(f'job filter is set as {sjf}')
             return sjf
+
+    logger.debug('no macro config to use job filter')
 
     # check default job
     if config is not None:
         if dj := config.get_default_job():
+            logger.debug(f'default job filter given as {dj}')
             # its not none or ''
             if dj == '_':
                 raise FluxCardInputError('underscore not allowed in default job')
             if ',' in dj:
                 raise FluxCardInputError('Default job does not take a comma seperated list')
+            logger.debug(f'job filter set as {{{dj}}}')
             return {dj}
-    
+
+    logger.debug('no default job in config, job filter set as no filter')
     return None
 
 def get_cli_date_filter(args: ParsedArgs) -> Tuple[date|None,date|None]:

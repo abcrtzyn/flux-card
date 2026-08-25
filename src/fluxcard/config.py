@@ -247,17 +247,16 @@ class MacroConfig:
         self.raw = raw
         self.config_path = config_path
     
-    def get_job_filter(self):
-        try:
-            return (
-                Maybe(self.raw.get('job_filter'))
-                .map(lambda x: x if isinstance(x,str) or isinstance(x,list) and is_list_strings(x) else raise_type_error('job_filter',type(x).__name__,'str or list of str'))
-                .unwrap()
-            )
-        except Exception as e:
-            e.add_note('key job_filter')
-            raise e
-
+    def get_job_filter(self) -> str | List[str] | None:
+        """returns a string or list of strings of the macro config job filter, returns the type in the config file
+        returns None if the key is not found
+        raises FluxCardConfigTypeError if the type is not a list of strings or is a string"""
+        return (
+            Maybe(self.raw.get('job_filter'))
+            .map(lambda x: x if isinstance(x,str) or isinstance(x,list) and is_list_strings(x) else raise_type_error(f'job_filter',type(x).__name__,'str or list of str'))
+            .unwrap()
+        )
+        
     def get_period_value(self) -> int | None:
         try:
             return (
