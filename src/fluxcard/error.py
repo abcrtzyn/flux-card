@@ -4,6 +4,7 @@ import sys
 class FluxCardError(Exception): """Exceptions that a user should see, not a crash"""
 class FluxCardInputError(FluxCardError): """Expections for all data validation and parsing"""
 
+class FluxCardPluginError(FluxCardInputError): """Exceptions when a plugin can not be loaded"""
 class FluxCardFieldRequiredError(FluxCardInputError): 
     """Exceptions when a field is required in config or command line"""
     # field: str
@@ -41,6 +42,8 @@ def print_terminal_error(e: FluxCardError) -> None:
         print(f"{BOLD}Error in config{RESET}", file=sys.stderr)
     elif isinstance(e, FluxCardCommandLineError):
         print(f"{BOLD}Failed to parse command line arguments{RESET}", file=sys.stderr)
+    elif isinstance(e, FluxCardPluginError):
+        print(f"{BOLD}Error loading plugin{RESET}", file=sys.stderr)
     elif isinstance(e, FluxCardInputError):
         print(f"{BOLD}Error in input parsing and validation{RESET}", file=sys.stderr)
     elif isinstance(e, FluxCardRuntimeError):

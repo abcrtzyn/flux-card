@@ -18,7 +18,7 @@ from typing import Any, Dict, Iterable, Iterator, List, Literal, Set, Tuple, ove
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fluxcard.config import AppConfig, MacroConfig, OutputConfig, ScheduleConfig, TomlTable, parse_days_cycle_from_dict, parse_manual_cycle, parse_month_cycle_from_dict
-from fluxcard.error import FluxCardCommandLineError, FluxCardConfigValueError, FluxCardError, FluxCardFieldRequiredError, FluxCardInputError, print_terminal_error
+from fluxcard.error import FluxCardCommandLineError, FluxCardConfigValueError, FluxCardError, FluxCardFieldRequiredError, FluxCardInputError, FluxCardPluginError, print_terminal_error
 from fluxcard.output_registry import RegistrationTracker, get_formatter, print_formatters
 from fluxcard.output_runners import FileRunner, OutputRunner, StdoutRunner
 from fluxcard.schedules import Schedule
@@ -226,28 +226,37 @@ def get_config(args: ParsedArgs) -> AppConfig | None:
     assert False, 'unreachable'
 
 def load_plugin(file_path: Path, index: int) -> None:
-    
-    if not file_path.exists():
-        raise FluxCardConfigValueError(f'unknown file path {file_path}')
+    """Load the plugin at the file path, index should be a unique number to differentiate the plugin from others of the same name.
+    raises FluxCardPluginError if the module could not be loaded because it is not a valid python file
+    raises any errors passed from the module itself
+    """
+
+    if not file_path.is_file():
+        raise FluxCardPluginError(f"{file_path} is not a file")
 
     # using an index value to make sure that modules are uniquely named
     module_name = f"_dynamic_plugin_{file_path.stem}_{index}"
 
-    tracker = RegistrationTracker()
+    logger.debug(f'loading module at {file_path} as {module_name}')
 
+    # start the registration tracker
+    tracker = RegistrationTracker()
     tracker.begin()
 
     try:
         spec = spec_from_file_location(module_name, str(file_path))
         if spec is None or spec.loader is None:
-            raise ImportError(f"Could not load specifications for: {file_path}")
+            raise FluxCardPluginError(f"Could not parse python module spec for {file_path}, is it a python file?")
 
         module = module_from_spec(spec)
         sys.modules[module_name] = module
 
-        # run the module
-        spec.loader.exec_module(module)
-
+        try:
+            # run the module
+            spec.loader.exec_module(module)
+        except Exception:
+            # letting all exceptions pass through until I figure out something better to do
+            raise
     finally:
         # this removes it from sys.modules because we don't need it to be there.
         if module_name in sys.modules:
@@ -256,9 +265,9 @@ def load_plugin(file_path: Path, index: int) -> None:
     added_formatters = tracker.finish()
     if len(added_formatters) > 0:
         added_str = ', '.join(f"'{k}'" for k in sorted(added_formatters))
-        print(f'loaded module at {file_path} and added formatter{'s' if len(added_formatters) > 1 else ''} {added_str}')
+        logger.info(f'loaded module at {file_path} and added formatter{'s' if len(added_formatters) > 1 else ''}: {added_str}')
     else:
-        print(f'warning: loaded module at {file_path} but no formatters were registered')
+        logger.warning(f'loaded module at {file_path} but no formatters were registered, check that you have used the @register_formatter decorator')
 
 
 

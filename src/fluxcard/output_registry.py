@@ -52,6 +52,7 @@ def print_formatters() -> None:
         print(f"  {name:<12} ── {doc}")
 
 class RegistrationTracker():
+    """finish returns all the formatter keys that have been added since begin"""
     def begin(self):
         self.before_formatters = set(_OUTPUT_REGISTRY.keys())
     

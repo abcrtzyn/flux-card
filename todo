@@ -1,3 +1,5 @@
+- plugin loading errors are not handled very well, need to test with modules that have syntax errors, raise other exceptions, have import errors, etc. Maybe figure out how to nicely say, could not load plugin, and here is the traceback.
+
 - grouped by pay period summary output format and its requirements
     - Implementation wise, how should this data be grouped, what pay period function is needed?
     - Implement that function for each schedule
