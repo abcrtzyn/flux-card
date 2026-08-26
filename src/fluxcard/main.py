@@ -404,7 +404,9 @@ def get_job_filter(args: ParsedArgs, macro_config: MacroConfig | None, config: A
     return None
 
 def get_cli_date_filter(args: ParsedArgs) -> Tuple[date|None,date|None]:
-    """return the date filter for CLI date filter dates filter"""
+    """get the date filter arguments from the command line args. returns (start_date, end_date)
+    raises FluxCardInputError if the start date is after or on the same date as the end date"""
+
     # date filtering, straight use them
     if args.start_date is not None and args.end_date is not None and args.start_date >= args.end_date:
         raise FluxCardInputError('start date is after or the same as end date, no results would show')
@@ -412,17 +414,26 @@ def get_cli_date_filter(args: ParsedArgs) -> Tuple[date|None,date|None]:
 
 
 def get_period_parameter(args: ParsedArgs, macro_config: MacroConfig | None) -> int | None:
+    """get the period parameter from the command line args or macro config, None if no value set
+    raises FluxCardConfigTypeError if the value in macro config is not an integer"""
+
     if args.period is not None:
+        logger.debug(f'period given in command line arguments, value {args.period}')
         return args.period
     if macro_config is not None:
-        return macro_config.get_period_value()
+        value = macro_config.get_period_value()
+        if value is not None:
+            logger.debug(f'period given in macro config, value {value}')
+            return value
+
+    logger.debug(f'no period given')
     
     return None
 
 def create_schedule_from_config(schedule_config: ScheduleConfig, name: str, config: "AppConfig") -> Schedule:
     schedule_type = schedule_config.get_type()
-    
-    match schedule_config.get_type():
+
+    match schedule_type:
         case 'days_cycle':
             return parse_days_cycle_from_dict(schedule_config)
         case 'monthly':

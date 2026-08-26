@@ -111,7 +111,12 @@ class ScheduleConfig:
             raise_type_error('',type(raw).__name__,'dict')
         self.raw = raw
 
-    def get_type(self):
+    def get_type(self) -> str:
+        """get the type field from the schedule config
+        
+        raises FluxCardRequiredFieldError if the type is not given
+        raises FluxcardConfigTypeError if the type is not a string"""
+        
         try:
             return (
                 Box(self.raw.get('type'))
@@ -258,16 +263,16 @@ class MacroConfig:
         )
         
     def get_period_value(self) -> int | None:
-        try:
-            return (
-                Maybe(self.raw.get('period'))
-                .map(lambda x: x if isinstance(x,int) else raise_type_error('period',type(x).__name__,'int'))
-                .unwrap()
-            )
-        except Exception as e:
-            e.add_note('key period')
-            raise e
+        """returns a integer value for the period offset from the macro config
+        returns None if the key is not found
+        raises FluxCardConfigTypeError if the type is not an integer"""
+        return (
+            Maybe(self.raw.get('period'))
+            .map(lambda x: x if isinstance(x,int) else raise_type_error('period',type(x).__name__,'int'))
+            .unwrap()
+        )
 
+    
     def get_output_configs(self) -> List[OutputConfig]:
         try:
             return (
