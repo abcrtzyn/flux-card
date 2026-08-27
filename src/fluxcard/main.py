@@ -540,25 +540,39 @@ def get_outputs(args: ParsedArgs, macro_config: MacroConfig | None) -> List[Outp
     return []
 
 def check_file_terminator(input_path: Path) -> None:
-    """Check that the file terminates properly, will raise an error if not"""
-    with open(input_path,"rb") as f:
-        try:
-            f.seek(-3,os.SEEK_END)
-            terminator = f.read(3).decode()
-            if terminator != '\n==':
-                raise FluxCardInputError("The file does not end with a douple equals, are you still clocked in? Or does the file end with a newline?")
-        except OSError:
-            # less than three bytes.
-            # expecting the first line with '==' and that is it
-            f.seek(0)
-            text = f.read().decode()
-            if text != '==':
-                raise FluxCardInputError("The file does not end with a douple equals, does the file end with a newline?")
+    """This function checks that the file terminates as expected which must be "\\n=="
+    there should be no newline at the end of the file (for now).
+
+    raises FluxCardInputError if the file does not end properly.
+    raises OSError if the file could not be opened."""
+    try:
+        with open(input_path,"rb") as f:
+            try:
+                f.seek(-3,os.SEEK_END)
+                terminator = f.read(3).decode()
+                if terminator != '\n==':
+                    raise FluxCardInputError("The file does not end with a douple equals, are you still clocked in? Or does the file end with a newline?")
+            except OSError:
+                # less than three bytes.
+                # expecting the first line with '==' and that is it
+                f.seek(0)
+                text = f.read().decode()
+                if text != '==':
+                    raise FluxCardInputError("The file does not end with a douple equals, does the file end with a newline?")
+    except OSError as e:
+        # file could not be opened for some reason
+        # for now I'm just going to pass this error on
+        raise e
+    
 
 
 def read_segment_lines(input_path: Path) -> Iterator[Tuple[Tuple[Path, int], List[str]]]:
     """Yields each block between lines with ==
-    Note that this is very sensitive to lines, if the split line isn't exactly ==, it won't split it"""
+    Note that this is very sensitive to lines, if the split line isn't exactly ==, it won't split it
+    
+    raises FluxCardInputEror if the file does not start the first line with =="""
+
+
     with open(input_path) as f:
         # check for a seperator at the top of the file
         line = f.readline().strip()
@@ -580,6 +594,12 @@ def read_segment_lines(input_path: Path) -> Iterator[Tuple[Tuple[Path, int], Lis
 
 
 def parse_timestamp_line(line: str, loc_info: Tuple[Path,int],prefix:str) -> datetime:
+    """read a timestamp line, of the form
+    {prefix}{iso datetime}
+
+    raise ValueError if the line could not parsed
+    """
+
     if not line.startswith(prefix):
         raise ValueError(f"Parsing Error. {loc_info[0]}:{loc_info[1]} in time line must begin with a '{prefix}' character")
     try:
@@ -588,7 +608,12 @@ def parse_timestamp_line(line: str, loc_info: Tuple[Path,int],prefix:str) -> dat
         e.add_note(f"occured at {loc_info[0]}:{loc_info[1]}")
         raise e
 
-def parse_timecard_segment(lines: List[str], loc_info: Tuple[Path,int], tz: ZoneInfo):
+def parse_timecard_segment(lines: List[str], loc_info: Tuple[Path,int], tz: ZoneInfo) -> Segment:
+    """read a timecard segment all lines starting from == to the next ==.
+    returns a Segment object
+    
+    raises ValueError if there was a parsing error"""
+
     if len(lines) == 0:
             raise ValueError(f"Parsing Error. {loc_info[0]}:{loc_info[1]} empty record marked by consectutive == lines")
     if len(lines) < 4:
@@ -604,7 +629,9 @@ def parse_timecard_segment(lines: List[str], loc_info: Tuple[Path,int], tz: Zone
     return Segment(job,local_in,local_out,description)
 
 
-def split_across_midnight(segment: Segment, tz: ZoneInfo):
+def split_across_midnight(segment: Segment, tz: ZoneInfo) -> Iterator[Segment]:
+    """take a segment and split it across midnight in the output timezone, yields each split segment as a seperate segment"""
+
     current_start = segment.inTime
         
     # deal with in-outs that pass on multiple days
@@ -623,17 +650,26 @@ def split_across_midnight(segment: Segment, tz: ZoneInfo):
 
 
 def parse_segments(segments: Iterable[Tuple[Tuple[Path,int],List[str]]],output_timezone: ZoneInfo) -> Iterator[Segment]:
+    """For each unpparsed segment, yield a parsed segment
+    
+    raises ValueError if the segment can not be parsed"""
+
     for loc_info, lines in segments:
         segment = parse_timecard_segment(lines,loc_info,output_timezone)
         yield from split_across_midnight(segment,output_timezone)
 
 def job_filter_segments(segments: Iterable[Segment],job: Set[str] | None) -> Iterator[Segment]:
+    """Given an iterable of segments, return an iterator of segments filtered only by the job filter set
+    If job is None, all segments returned"""
+
     if job is None:
         return iter(segments)
     
     return (s for s in segments if s.job in job)
 
 def date_filter_segments(segments: Iterable[Segment],start_date: date | None, end_date: date | None) -> Iterator[Segment]:
+    """given an iterable of segments, return an iterator of segments filtered by the start and end date.
+    return only the segments that match the job filter"""
     if start_date is None and end_date is None:
         yield from segments
     
@@ -644,6 +680,7 @@ def date_filter_segments(segments: Iterable[Segment],start_date: date | None, en
 
 
 def sort_by_time(segments: Iterable[Segment]) -> List[Segment]:
+    """sorts an iterable of segments by the the 'in time' field and returns as a list"""
     return sorted(segments,key=lambda x: x.inTime)
 
 
