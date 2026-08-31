@@ -1,25 +1,29 @@
 #!/usr/bin/env python3
 
+
+# this loads all the output formats into the registry
 import argparse
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta, date # pyright: ignore[reportPrivateUsage]
+from datetime import date, datetime, time, timedelta
 from enum import Enum, auto
 from importlib.util import module_from_spec, spec_from_file_location
 import inspect
+import logging
 import os
 from pathlib import Path
+import re
 import sys
-from typing import Any, Dict, Iterable, Iterator, List, Literal, Set, Tuple
-from zoneinfo import ZoneInfo
-
-from fluxcard.schedules import Schedule
+from tomllib import TOMLDecodeError
+from typing import Any, Dict, Iterable, Iterator, List, Literal, Set, Tuple, overload
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fluxcard.config import AppConfig, MacroConfig, OutputConfig, ScheduleConfig, TomlTable, parse_days_cycle_from_dict, parse_manual_cycle, parse_month_cycle_from_dict
-from fluxcard.error import FluxCardCommandLineError, FluxCardConfigValueError, FluxCardError, FluxCardInputError, print_terminal_error
+from fluxcard.error import FluxCardCommandLineError, FluxCardConfigValueError, FluxCardError, FluxCardFieldRequiredError, FluxCardInputError, FluxCardPluginError, print_terminal_error
 from fluxcard.output_registry import RegistrationTracker, get_formatter, print_formatters
 from fluxcard.output_runners import FileRunner, OutputRunner, StdoutRunner
-from fluxcard.settings_parsers import OutputSettingsAction
+from fluxcard.schedules import Schedule
 from fluxcard.segments import Segment
+from fluxcard.settings_parsers import OutputSettingsAction
 
 # this loads all the output formats into the registry
 from . import outputs  # pyright: ignore[reportUnusedImport]
@@ -32,8 +36,35 @@ class DateFilterMode(Enum):
     PERIOD = auto()
     NONE = auto()
 
+# this goes in the rest of the files
+logger = logging.getLogger(__name__)
+
+def setup_logging(verbosity_score: int):
+    """Initializes global logging to print cleanly to the terminal screen."""
+
+    if verbosity_score == 0:
+        target_level = logging.ERROR  # Silent default
+    elif verbosity_score == 1:
+        target_level = logging.WARNING  # -v
+    elif verbosity_score == 2:
+        target_level = logging.INFO  # -vv
+    else:
+        target_level = logging.DEBUG  # -vvv or higher
+
+    # Define a clean layout for developers reading logs
+    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    
+    logging.basicConfig(
+        level=target_level,
+        format=log_format,
+        datefmt="%Y-%m-%d %H:%M:%S",
+        stream=sys.stdout                  # Send standard logs to stdout
+    )
+
 
 class FluxCardArgumentParser(argparse.ArgumentParser):
+    """Subclass to change the error type to Fluxcard Error"""
+
     def error(self, message: str):
         raise FluxCardCommandLineError(f"{message}")
 
@@ -50,22 +81,26 @@ class ParsedArgs:
     macro: str | None
     print_config: bool
     list_formats: bool
+    verbose: int
 
 
 
 def parse_args() -> ParsedArgs:
+    """Parse command line arguments using ArgumentParser
+    raises FluxCardCommandLineError"""
+
     parser = FluxCardArgumentParser(prog="fluxcard",description="Summarize clock in sessions from the input file.\nUses settings from command line and config.toml")
 
     parser.add_argument("-c","--config",dest="alt_config", type=lambda x: Path(x).expanduser().resolve() if x else None, help="Alternate config file path")
 
     parser.add_argument("-i", "--input", dest="timecard_path", type=lambda x: Path(x).expanduser().resolve() if x else None, help="Path to input file")
-    parser.add_argument("-tz", "--timezone", dest="output_timezone", help="timezone to format output")
+    parser.add_argument("-tz", "--timezone", type=str, dest="output_timezone", help="timezone to format output")
     
-    parser.add_argument("-j","--job",dest="job_filter",help='Job(s) to filter by seperated by comma "WebDev,Gardening". Clear filter set by config with "_". One job is required in period mode')
+    parser.add_argument("-j","--job",dest="job_filter",type=str, help='Job(s) to filter by seperated by comma "WebDev,Gardening". Clear filter set by config with "_". One job is required in period mode')
 
 
     parser.add_argument("start_date", nargs="?", type=parse_cli_start_date, help="Optinal start date, can use _ as a placeholder (YYYY-MM-DD)")
-    parser.add_argument("end_date", nargs="?", type=date.fromisoformat, help="Optinal end date, not including the day itself (YYYY-MM-DD)")
+    parser.add_argument("end_date", nargs="?", type=parse_cli_end_date, help="Optinal end date, not including the day itself (YYYY-MM-DD)")
 
     parser.add_argument("-p", "--period", type=int, help="Period index (0=current, 1=previous, etc.), replaces date filtering mode")
     parser.add_argument("-o", "--output",nargs=2,action=OutputSettingsAction, metavar=("DESTINATION","FORMAT"), help="where and what to output. Destination can be 'stdout' or a file path (absolute or cwd relative), format can be any string that is has an output function.")
@@ -73,6 +108,8 @@ def parse_args() -> ParsedArgs:
     parser.add_argument('-m', "--macro", type=str, help="Macro to run, macros can be set in the config file to run commands with job filters and multiple output formats")
     parser.add_argument("--print-config",action="store_true", help="Print resolved configuration and exit")
     parser.add_argument("--list-formats",action="store_true", help="Print the list of formatter functions and exit")
+
+    parser.add_argument("-v","--verbose",action="count",default=0,help="Increase logging output verbosity: -v (warn), -vv (info), -vvv (debug).")
 
     raw_args = parser.parse_args()
 
@@ -88,10 +125,12 @@ def parse_args() -> ParsedArgs:
         macro=raw_args.macro,
         print_config=raw_args.print_config,
         list_formats=raw_args.list_formats,
+        verbose=raw_args.verbose
     )
 
 
 def parse_cli_start_date(date_str: str|None):
+    """Parse the start date from isoformat or '_'. raises ArgumentTypeError (used by argparse)"""
     if date_str is None or date_str in ("_", ""):
         return None
     try:
@@ -99,45 +138,125 @@ def parse_cli_start_date(date_str: str|None):
     except ValueError:
         raise argparse.ArgumentTypeError(f"invalid value '{date_str}', valid dates are 'YYYY-MM-DD' or '_'.")
 
-def get_config(args: ParsedArgs) -> AppConfig | None:
-    # check for alternate config parameter
-    if args.alt_config is not None:
-        alt_config_path = Path(args.alt_config).resolve()
-        if not alt_config_path.exists():
-            raise FluxCardInputError(f'config file at "{alt_config_path}" does not exist')
-        return AppConfig.load(alt_config_path)
-    # check cwd for config file
-    config_input_path = Path.cwd() / "config.toml"
-    if config_input_path.exists():
-        return AppConfig.load(config_input_path)
-    # can also check places like ~/.config/fluxcard or repo root
+def parse_cli_end_date(date_str: str|None):
+    """Parse the end date from isoformat. raises ArugmentTypeError (used by argparse)"""
+    if date_str is None or date_str in (""):
+        return None
+    try:
+        return date.fromisoformat(date_str)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid value '{date_str}', valid dates are 'YYYY-MM-DD'")
+
+@overload
+def _check_and_load(path: Path, is_explicit: Literal[True]) -> AppConfig: ...
+
+@overload
+def _check_and_load(path: Path, is_explicit: Literal[False]) -> AppConfig | None: ...
+
+def _check_and_load(path: Path, is_explicit: bool) -> AppConfig | None:
+    """Load the config at path. 
+    If is_explicit is True, will return AppConfig or raise an FluxCardInputError if the file can not be read
+    If is_explicit is False, will return AppConfig or return None if the file can not be read
     
-    # if no standard, use empty config
-    return None
+    In either case, can raise TOMLDecodeError if the decoding is not successful"""
+
+    try:
+        if path.is_dir():
+            raise IsADirectoryError("Target path is a directory, not a file.")
+        data = AppConfig.load(path)
+        logger.info(f"File handle opened and parsed: '{path}'")
+        return data
+    except OSError as e:
+        # Catches FileNotFoundError, PermissionError, IsADirectoryError, etc.
+        if is_explicit:
+            raise FluxCardInputError(
+                f'Cannot read config file at "{path}": {e.strerror}'
+            )
+        logger.debug(f"Implicit file skipped. OS message: {e.strerror}")
+        return None
+
+
+def get_config(args: ParsedArgs) -> AppConfig | None:
+    """Returns an AppConfig object or None.
+    Checks for alt_config option on command line, will raise FluxCardInputError if that file is not readable
+    Otherwise uses config.toml in the current working directory, returns None if that file is not readable
+    raises FluxCardInputError if the file is not a valid TOML format"""
+
+    config_path = Path.cwd() / "config.toml"
+    try:
+        # check for alternate config parameter
+        if args.alt_config is not None:
+            config_path = args.alt_config.resolve()
+            logger.debug(f"Alternate configuration file path requested: '{config_path}'")
+            # load or raise error
+            config = _check_and_load(config_path,True)
+            logger.info(f"Successfully loaded alternate configuration file: '{config_path}'")
+            return config
+        # else, using the normal config path
+        logger.debug(f"No alternate config provided. Checking standard path: '{config_path}'")
+        # load or return None
+        config = _check_and_load(config_path,False)
+        if config is None:
+            logger.info("No configuration file found at alternate or standard locations. Proceeding with no configuration.")
+        else:
+            logger.info(f"Successfully loaded default configuration file: '{config_path}'")
+        return config
+    
+    except TOMLDecodeError as e:
+        # Could not decode the file as a TOML, this whole section is refactoring the error
+
+        # Extract line and column numbers
+        line = getattr(e, "lineno", None)
+        col = getattr(e, "colno", None)
+
+        if line is None or col is None:
+            match = re.search(r"\(at line (\d+), column (\d+)\)", str(e))
+            if match:
+                line, col = match.group(1), match.group(2)
+        
+        clickable_location = f'File "{config_path}", line {line}, col {col}'
+        error_msg = getattr(e, "msg", str(e)).split(" (at line")[0]
+
+        raise FluxCardInputError(
+            f"Could not decode the configuration file.\n"
+            f"  {clickable_location}\n"
+            f"  Decode Error: {error_msg}"
+        )
+
+    assert False, 'unreachable'
 
 def load_plugin(file_path: Path, index: int) -> None:
-    
-    if not file_path.exists():
-        raise FluxCardConfigValueError(f'unknown file path {file_path}')
+    """Load the plugin at the file path, index should be a unique number to differentiate the plugin from others of the same name.
+    raises FluxCardPluginError if the module could not be loaded because it is not a valid python file
+    raises any errors passed from the module itself
+    """
+
+    if not file_path.is_file():
+        raise FluxCardPluginError(f"{file_path} is not a file")
 
     # using an index value to make sure that modules are uniquely named
     module_name = f"_dynamic_plugin_{file_path.stem}_{index}"
 
-    tracker = RegistrationTracker()
+    logger.debug(f'loading module at {file_path} as {module_name}')
 
+    # start the registration tracker
+    tracker = RegistrationTracker()
     tracker.begin()
 
     try:
         spec = spec_from_file_location(module_name, str(file_path))
         if spec is None or spec.loader is None:
-            raise ImportError(f"Could not load specifications for: {file_path}")
+            raise FluxCardPluginError(f"Could not parse python module spec for {file_path}, is it a python file?")
 
         module = module_from_spec(spec)
         sys.modules[module_name] = module
 
-        # run the module
-        spec.loader.exec_module(module)
-
+        try:
+            # run the module
+            spec.loader.exec_module(module)
+        except Exception:
+            # letting all exceptions pass through until I figure out something better to do
+            raise
     finally:
         # this removes it from sys.modules because we don't need it to be there.
         if module_name in sys.modules:
@@ -146,97 +265,148 @@ def load_plugin(file_path: Path, index: int) -> None:
     added_formatters = tracker.finish()
     if len(added_formatters) > 0:
         added_str = ', '.join(f"'{k}'" for k in sorted(added_formatters))
-        print(f'loaded module at {file_path} and added formatter{'s' if len(added_formatters) > 1 else ''} {added_str}')
+        logger.info(f'loaded module at {file_path} and added formatter{'s' if len(added_formatters) > 1 else ''}: {added_str}')
     else:
-        print(f'warning: loaded module at {file_path} but no formatters were registered')
+        logger.warning(f'loaded module at {file_path} but no formatters were registered, check that you have used the @register_formatter decorator')
 
 
 
-def get_input_path(args: ParsedArgs, config: AppConfig | None):
+def get_input_path(args: ParsedArgs, config: AppConfig | None) -> Path:
+    """Get the input path from either the config file or the command line args.
+    raises FluxCardFieldRequiredError if the input is not specified
+    raises FluxCardInputError if the input file is not a file
+    raises FluxCardConfigTypeError if the path in the config is not a string"""
     # get the input path from either command line args or config
     # these paths are already abs. paths
     if args.timecard_path is not None:
         input_path = args.timecard_path
+        logger.info(f"input path given by command line: {input_path}")
     else:
         input_path = config.get_timecard_path() if config is not None else None
-            
+        if input_path is not None:
+            logger.info(f"input path given by config: {input_path}")
+        
     # check if the path is given, and if we can read from it.
     if input_path is None:
-        raise FluxCardInputError('"timecard_path" must be specified in config or given as a command line argument')
-    if not input_path.exists():
-        raise FluxCardInputError(f"file not found: {input_path}")
+        raise FluxCardFieldRequiredError('"timecard_path" must be specified in config or given as a command line argument -i')
     if not input_path.is_file():
-        raise FluxCardInputError(f"timecard file is not a file: {input_path}")
-    if not os.access(input_path, os.R_OK):
-        raise FluxCardInputError(f"Do not have permission to read file: {input_path}")
-    # good!
+        raise FluxCardInputError(f"The path {input_path} is not a valid file")
+    # good enough for now.
     return input_path
 
 def get_output_timezone(args: ParsedArgs, config: AppConfig | None) -> ZoneInfo:
+    """Get timezone information from the conmmand line or config
+    raises FluxCardFieldRequiredError if the timezone is not specified
+    raises FluxCardConfigTypeError if the timezone in the config is not a string
+    raises FluxCardInputError if the timezone is not a valid timezone"""
+
     if args.output_timezone is not None:
         tz_str = args.output_timezone
+        logger.info(f'output timezone specified by command line: {tz_str}')
     else:
         tz_str = config.get_output_timezone() if config is not None else None
-    
+        if tz_str is not None:
+            logger.info(f'output timezone specified by config: {tz_str}')
+        
     if tz_str is None:
-        raise FluxCardInputError('no output timezone specified in cli or config, please specify a timezone')
+        raise FluxCardFieldRequiredError('"output_timezone" must be specified in config or given as a command line argument -tz')
 
-    return ZoneInfo(tz_str)
+    try:
+        return ZoneInfo(tz_str)
+    except ZoneInfoNotFoundError:
+        raise FluxCardInputError(f"time zone '{tz_str}' is unknown")
+
 
 def get_macro_config(args: ParsedArgs, config: AppConfig | None) -> MacroConfig | None:
+    """get the macro config of the macro specified in the command line arguments
+    retunrs MacroConfig for the macro specified
+    returns None if no macro is specified in the command line arguments
+    raises FluxCardConfigTypeError if the config file has bad typing
+    raises FluxCardInputError if the macro is not found in the config file"""
+
     if args.macro is None:
+        logger.debug("No macro given in command line args")
         return None
-    
+
+    logger.debug(f"Checking for macro {args.macro} in the config")
     mc = config.get_macro_config(args.macro) if config is not None else None
     if mc is None:
-        raise FluxCardInputError(f"'{args.macro}' is not a defined macro\ncheck your spelling, check which config file you are using, or check that it is actually defined")
+        raise FluxCardInputError(f"'{args.macro}' is not a defined macro\ncheck your spelling, or check that it is actually defined in your config file")
 
+    logger.info(f"Macro config found for macro {args.macro}")
     return mc
     
 
 def get_job_filter(args: ParsedArgs, macro_config: MacroConfig | None, config: AppConfig | None) -> Set[str] | None:
+    """Get the job filter specified by command line args, macro config, or default job
+    returns a set of jobs for a filter, or None for no filter (all)
+    raises FluxCardInputError if the value given is not allowed
+    raises FluxCardConfigTypeError if the type in the config is wrong
+    
+    """
     
     # if the command line arguments have a value, it is always taken
     if args.job_filter is not None:
         # command line arguments can be a single underscore
+        logger.debug(f'command line job filter given as "{args.job_filter}"')
+
         if args.job_filter == '_':
+            logger.info(f'job filter is set as no filter')
             return None
+        
         # else
         # Split comma-separated inputs and strip whitespace
         job_set = {item.strip() for item in args.job_filter.split(",") if item.strip()}
         if '' in job_set:
-            raise FluxCardInputError('Job filter option, check your input')
+            raise FluxCardInputError('found empty string in job filter command line option, please check your')
         if '_' in job_set:
-            raise FluxCardInputError('Not sure how to handle "_" in the job filter list. It doesn\'t make sense to set a filter and clear the filter at the same time')
+            raise FluxCardInputError("Underscore found in the job filter list, this is undefined behaviour")
+        logger.info(f'job filter is set as {job_set}')
         return job_set
+
+    logger.debug('command line job filter is not given')
 
     # check the macro config
     if macro_config is not None:
         jf = macro_config.get_job_filter()
+
+        logger.debug(f'macro config job filter given as {jf}')
+
         if isinstance(jf,str):
+            if ',' in jf:
+                logger.warning('job filter in macro config should be a list of strings, not a comma seperated string')
             if jf == '_':
                 raise FluxCardInputError('underscore not allowed in macro config job filter')
+            logger.info(f'job filter is set as {{{jf}}}')
             return {jf}
         elif isinstance(jf,list):
             sjf = set(jf)
             if '_' in sjf:
-                raise FluxCardInputError('understore not allowed in macro config job filter')
+                raise FluxCardInputError('underscore not allowed in macro config job filter')
+            logger.info(f'job filter is set as {sjf}')
             return sjf
+
+    logger.debug('no macro config to use job filter')
 
     # check default job
     if config is not None:
         if dj := config.get_default_job():
+            logger.debug(f'default job filter given as {dj}')
             # its not none or ''
             if dj == '_':
                 raise FluxCardInputError('underscore not allowed in default job')
             if ',' in dj:
                 raise FluxCardInputError('Default job does not take a comma seperated list')
+            logger.debug(f'job filter set as {{{dj}}}')
             return {dj}
-    
+
+    logger.debug('no default job in config, job filter set as no filter')
     return None
 
 def get_cli_date_filter(args: ParsedArgs) -> Tuple[date|None,date|None]:
-    """return the date filter for CLI date filter dates filter"""
+    """get the date filter arguments from the command line args. returns (start_date, end_date)
+    raises FluxCardInputError if the start date is after or on the same date as the end date"""
+
     # date filtering, straight use them
     if args.start_date is not None and args.end_date is not None and args.start_date >= args.end_date:
         raise FluxCardInputError('start date is after or the same as end date, no results would show')
@@ -244,17 +414,32 @@ def get_cli_date_filter(args: ParsedArgs) -> Tuple[date|None,date|None]:
 
 
 def get_period_parameter(args: ParsedArgs, macro_config: MacroConfig | None) -> int | None:
+    """get the period parameter from the command line args or macro config, None if no value set
+    raises FluxCardConfigTypeError if the value in macro config is not an integer"""
+
     if args.period is not None:
+        logger.debug(f'period given in command line arguments, value {args.period}')
         return args.period
     if macro_config is not None:
-        return macro_config.get_period_value()
+        value = macro_config.get_period_value()
+        if value is not None:
+            logger.debug(f'period given in macro config, value {value}')
+            return value
+
+    logger.debug(f'no period given')
     
     return None
 
 def create_schedule_from_config(schedule_config: ScheduleConfig, name: str, config: "AppConfig") -> Schedule:
+    """create a schedule runner object of the correct type from the config
+    raises FluxCardFieldRequiredError if any fields needed are not given
+    raises FluxCardConfigTypeError if any fields are not the correct type
+    raises FluxcardConfigValueError if any fields have not allowed values, including an unknown schedule type
+    """
     schedule_type = schedule_config.get_type()
-    
-    match schedule_config.get_type():
+    logger.debug(f'schedule has type {schedule_type}')
+
+    match schedule_type:
         case 'days_cycle':
             return parse_days_cycle_from_dict(schedule_config)
         case 'monthly':
@@ -262,66 +447,91 @@ def create_schedule_from_config(schedule_config: ScheduleConfig, name: str, conf
         case 'manual':
             return parse_manual_cycle(name, config)
         case _:
-            raise FluxCardConfigValueError(f'Unknown schedule type {schedule_type} at key schedule')
+            raise FluxCardConfigValueError(f'Unknown schedule type {schedule_type} at\n{schedule_config.field_path}.type')
     
     assert False, "unreachable"
 
 
 def get_schedule(job_filter: Set[str] | None, config: AppConfig | None) -> Schedule:
+    """get the schedule object that lines up with the job filter specified
+    raises FluxCardFieldRequiredError if no job filter is given, and others
+    raises FluxCardInputError if no config file is given, and others
+    raises FluxCardConfigTypeError if any types in the config file are wrong
+    raises FluxcardConfigValueErro if any values are not allowed"""
     if job_filter is None:
-        raise FluxCardInputError('job filter is required in period mode and each of the jobs schedules must match')
+        raise FluxCardFieldRequiredError('job filter is required in period mode and each of the jobs schedules must match')
     if config is None:
         raise FluxCardInputError('config file not given, required for job config and schedule config')
 
     # check that every job in job_filter has the same schedule set
-    schedules: set[str | None] = set()
+    logger.debug('checking that every job in job filter has the same schedule')
+    schedules: set[str] = set()
     for x in job_filter:
         jc = config.get_job_config(x)
         if jc is None:
             raise FluxCardInputError(f"in period mode, every job in job filter must have a job config with a schedule set, job config for '{x} was not found")
-        schedules.add(jc.get_schedule_key())
-
+        sk = jc.get_schedule_key()
+        if sk is None:
+            raise FluxCardFieldRequiredError(f'in period mode, every job in the job filter must have the same schedule, job {x} does not have a schedule assigned')
+        logger.debug(f'{x} has {sk}')
+        schedules.add(sk)
     if len(schedules) != 1:
-        raise FluxCardInputError(f'in period mode, every job in job filter must have the same schedule, actually have {schedules}')
+        raise FluxCardFieldRequiredError(f'in period mode, every job in job filter must have the same schedule, actually have {schedules}')
     schedule_key = schedules.pop()
-    if schedule_key is None:
-        raise FluxCardInputError('in period mode, the job(s) filtered by must have a schedule')
+    logger.debug(f'all jobs have schedule {schedule_key}')
+
     schedule_config = config.get_schedule(schedule_key)
     if schedule_config is None:
         raise FluxCardInputError(f"could not find schedule '{schedule_key}' in the config")
-
+    logger.debug(f'schedule {schedule_key} found in config, creating object')
     return create_schedule_from_config(schedule_config,schedule_key,config)
 
 def create_output_runner_common(dest: Path | Literal['stdout'], form: str, extra_kwargs: TomlTable) -> OutputRunner:
+    """create an output runner given a destination path or stdout, format, and any extra kwargs
+    checks the format function is valid as well as check any arguments it might have
+    
+    raises FluxCardInputError if the recieved extra arguments are not allowed by the program
+    """
+
     # get the formatter
     try:
         formatter = get_formatter(form)
     except KeyError as e:
         raise FluxCardInputError(e.args[0]) from e
+    logger.debug(f'format {form} is known')
 
     config_given_params = set(extra_kwargs.keys())
+    if len(config_given_params) > 0: logger.debug(f'we have args {config_given_params}')
+    else: logger.debug(f'we have no extra args')
     program_invalid_keys = config_given_params.intersection(PROGRAM_FORMAT_PARAMS)
     if program_invalid_keys:
-        raise FluxCardConfigValueError(f'For format "{form}", recieved options that are generated by the program and are not allowed by config: {', '.join(program_invalid_keys)}')
+        raise FluxCardInputError(f'For format "{form}", recieved options that are generated by the program and are not allowed by config: {', '.join(program_invalid_keys)}')
+
+    logger.debug(f'none of the args conflicted with program generated args')
 
     # check the signature
     sig = inspect.signature(formatter)
     # if the signature has **kwargs in it, we don't check keys.
     if not any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values()):
         wanted_params = set(sig.parameters.keys())
+        logger.debug(f'formatter wants {wanted_params}')
         program_params_requested = wanted_params.intersection(PROGRAM_FORMAT_PARAMS)
         # check for given keys not supported by the formatter
         invalid_keys = config_given_params - wanted_params
         if invalid_keys:
-            raise FluxCardConfigValueError(f'Format "{form}" received unsupported options: {', '.join(invalid_keys)}')
+            raise FluxCardInputError(f'Format "{form}" received unsupported options: {', '.join(invalid_keys)}')
+        logger.debug('all given args were valid args')
         # check for keys that will be defined by the program and thus should not be given by config
     else:
-        # **kwards
+        # **kwargs
         # we request all the params we have
         program_params_requested = PROGRAM_FORMAT_PARAMS
+        logger.debug('formatter uses kwargs, no checking to be done')
 
     # we have passed the key check here
+    logger.debug(f'have passed key check for formatter {form}')
 
+    logger.debug(f'output destination is {dest}')
     # destination can be None or stdout for stdout
     if dest == "stdout":
         return StdoutRunner(form,formatter,extra_kwargs,program_params_requested)
@@ -331,14 +541,27 @@ def create_output_runner_common(dest: Path | Literal['stdout'], form: str, extra
 
 
 def create_output_runner_from_args(output_args: Tuple[str,str]) -> OutputRunner:
+    """creates an output runner from an arguments options dest and format
+    Should not raise an error because it does not provide any extra arguments to be checked, but I'm telling you anyway
+    - raises FluxCardInputError if the recieved extra arguments are not allowed by the program
+    """
+
+    logger.debug('creating output runner from args')
     dest = output_args[0]
-    # normalizing destination variable, probably don't have to do about half of of the path resolution stuff, but doing it anyway.
     if dest != 'stdout':
-        dest = Path(dest).expanduser().resolve()
+        dest = Path(dest).resolve()
 
     return create_output_runner_common(dest,output_args[1],{})
 
 def create_output_runner_from_config(output_config: OutputConfig) -> OutputRunner:
+    """creates an output runner from a output config object
+    
+    raises FluxCardFieldRequiredError if the format function is not given
+    raises FluxCardConfigTypeError if the types in the config are not correct
+    raises FluxCardInputError if the recieved extra arguments are not allowed by the program
+    """
+
+    logger.debug('creating output runner from output config')
     # output is required, otherwise, how would we know how to output?
     form = output_config.get_format()
     # remove the key from the dictionary
@@ -350,36 +573,59 @@ def create_output_runner_from_config(output_config: OutputConfig) -> OutputRunne
 
 
 def get_outputs(args: ParsedArgs, macro_config: MacroConfig | None) -> List[OutputRunner]:
+    """get a list of all output runners for the program, uses any specified by command line args, if not given uses all in macro config
+    can return empty list if no outputs are specified anywhere
+    
+    raises FluxCardFieldRequiredError if the format function is not given
+    raises FluxCardConfigTypeError if the types in the config are not correct
+    raises FluxCardInputError if the recieved extra arguments are not allowed by the program"""
+
     # if args.outputs, then we use the single output definde there
     if args.output is not None:
+        logger.info('output specified by arguments, overrides macro outputs')
         return [create_output_runner_from_args(args.output)]
 
     # else, look at macro config, this can be a list
     if macro_config is not None:
+        logger.info('output formats specified by macro config')
         return [create_output_runner_from_config(x) for x in macro_config.get_output_configs()]
 
     return []
 
 def check_file_terminator(input_path: Path) -> None:
-    """Check that the file terminates properly, will raise an error if not"""
-    with open(input_path,"rb") as f:
-        try:
-            f.seek(-3,os.SEEK_END)
-            terminator = f.read(3).decode()
-            if terminator != '\n==':
-                raise FluxCardInputError("The file does not end with a douple equals, are you still clocked in? Or does the file end with a newline?")
-        except OSError:
-            # less than three bytes.
-            # expecting the first line with '==' and that is it
-            f.seek(0)
-            text = f.read().decode()
-            if text != '==':
-                raise FluxCardInputError("The file does not end with a douple equals, does the file end with a newline?")
+    """This function checks that the file terminates as expected which must be "\\n=="
+    there should be no newline at the end of the file (for now).
+
+    raises FluxCardInputError if the file does not end properly.
+    raises OSError if the file could not be opened."""
+    try:
+        with open(input_path,"rb") as f:
+            try:
+                f.seek(-3,os.SEEK_END)
+                terminator = f.read(3).decode()
+                if terminator != '\n==':
+                    raise FluxCardInputError("The file does not end with a douple equals, are you still clocked in? Or does the file end with a newline?")
+            except OSError:
+                # less than three bytes.
+                # expecting the first line with '==' and that is it
+                f.seek(0)
+                text = f.read().decode()
+                if text != '==':
+                    raise FluxCardInputError("The file does not end with a douple equals, does the file end with a newline?")
+    except OSError as e:
+        # file could not be opened for some reason
+        # for now I'm just going to pass this error on
+        raise e
+    
 
 
 def read_segment_lines(input_path: Path) -> Iterator[Tuple[Tuple[Path, int], List[str]]]:
     """Yields each block between lines with ==
-    Note that this is very sensitive to lines, if the split line isn't exactly ==, it won't split it"""
+    Note that this is very sensitive to lines, if the split line isn't exactly ==, it won't split it
+    
+    raises FluxCardInputEror if the file does not start the first line with =="""
+
+
     with open(input_path) as f:
         # check for a seperator at the top of the file
         line = f.readline().strip()
@@ -401,6 +647,12 @@ def read_segment_lines(input_path: Path) -> Iterator[Tuple[Tuple[Path, int], Lis
 
 
 def parse_timestamp_line(line: str, loc_info: Tuple[Path,int],prefix:str) -> datetime:
+    """read a timestamp line, of the form
+    {prefix}{iso datetime}
+
+    raise ValueError if the line could not parsed
+    """
+
     if not line.startswith(prefix):
         raise ValueError(f"Parsing Error. {loc_info[0]}:{loc_info[1]} in time line must begin with a '{prefix}' character")
     try:
@@ -409,7 +661,12 @@ def parse_timestamp_line(line: str, loc_info: Tuple[Path,int],prefix:str) -> dat
         e.add_note(f"occured at {loc_info[0]}:{loc_info[1]}")
         raise e
 
-def parse_timecard_segment(lines: List[str], loc_info: Tuple[Path,int], tz: ZoneInfo):
+def parse_timecard_segment(lines: List[str], loc_info: Tuple[Path,int], tz: ZoneInfo) -> Segment:
+    """read a timecard segment all lines starting from == to the next ==.
+    returns a Segment object
+    
+    raises ValueError if there was a parsing error"""
+
     if len(lines) == 0:
             raise ValueError(f"Parsing Error. {loc_info[0]}:{loc_info[1]} empty record marked by consectutive == lines")
     if len(lines) < 4:
@@ -425,7 +682,9 @@ def parse_timecard_segment(lines: List[str], loc_info: Tuple[Path,int], tz: Zone
     return Segment(job,local_in,local_out,description)
 
 
-def split_across_midnight(segment: Segment, tz: ZoneInfo):
+def split_across_midnight(segment: Segment, tz: ZoneInfo) -> Iterator[Segment]:
+    """take a segment and split it across midnight in the output timezone, yields each split segment as a seperate segment"""
+
     current_start = segment.inTime
         
     # deal with in-outs that pass on multiple days
@@ -444,17 +703,26 @@ def split_across_midnight(segment: Segment, tz: ZoneInfo):
 
 
 def parse_segments(segments: Iterable[Tuple[Tuple[Path,int],List[str]]],output_timezone: ZoneInfo) -> Iterator[Segment]:
+    """For each unpparsed segment, yield a parsed segment
+    
+    raises ValueError if the segment can not be parsed"""
+
     for loc_info, lines in segments:
         segment = parse_timecard_segment(lines,loc_info,output_timezone)
         yield from split_across_midnight(segment,output_timezone)
 
 def job_filter_segments(segments: Iterable[Segment],job: Set[str] | None) -> Iterator[Segment]:
+    """Given an iterable of segments, return an iterator of segments filtered only by the job filter set
+    If job is None, all segments returned"""
+
     if job is None:
         return iter(segments)
     
     return (s for s in segments if s.job in job)
 
 def date_filter_segments(segments: Iterable[Segment],start_date: date | None, end_date: date | None) -> Iterator[Segment]:
+    """given an iterable of segments, return an iterator of segments filtered by the start and end date.
+    return only the segments that match the job filter"""
     if start_date is None and end_date is None:
         yield from segments
     
@@ -465,12 +733,15 @@ def date_filter_segments(segments: Iterable[Segment],start_date: date | None, en
 
 
 def sort_by_time(segments: Iterable[Segment]) -> List[Segment]:
+    """sorts an iterable of segments by the the 'in time' field and returns as a list"""
     return sorted(segments,key=lambda x: x.inTime)
 
 
 def main():
     try:
         args = parse_args()
+
+        setup_logging(args.verbose)
 
         config = get_config(args)
 

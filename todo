@@ -1,3 +1,6 @@
+- plugin loading errors are not handled very well, need to test with modules that have syntax errors, raise other exceptions, have import errors, etc. Maybe figure out how to nicely say, could not load plugin, and here is the traceback.
+- still need to think about how to do location information on the config file. maybe the config objects keep track of the file name and key path that came before it. Otherwise, seems like I might have to make my own parisng module for Toml.
+
 - grouped by pay period summary output format and its requirements
     - Implementation wise, how should this data be grouped, what pay period function is needed?
     - Implement that function for each schedule
