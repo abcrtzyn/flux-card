@@ -46,21 +46,21 @@ def is_date_list_sorted(l: Sequence[date]) -> bool:
 
 
 
-def raise_type_error(key: str, got_type: str, expected_type: str, more_info: str = '') -> NoReturn:
-    raise FluxCardConfigTypeError(f'type error at {key}, expected type {expected_type}, but got type {got_type}{f'\n{more_info}' if more_info else ''}')
+def raise_type_error(field_path: str, got_type: str, expected_type: str, more_info: str = '') -> NoReturn:
+    """raises a flux card config type error with the expected type, given type, and a more info string if you want"""
+    raise FluxCardConfigTypeError(f'expected type {expected_type}, but got type {got_type} at\n{field_path}{f'\n{more_info}' if more_info else ''}')
 
-def raise_value_error(key: str, value: Any, error: str) -> NoReturn:
-    raise FluxCardConfigValueError(f'value error at {key}, expected {error}, but got {value}')
+def raise_value_error(field_path: str, value: Any, error: str) -> NoReturn:
+    """raises a flux card config value error with the error string, and the value"""
+    raise FluxCardConfigValueError(f'expected {error}, but got {value} at \n{field_path}')
 
-def raise_required_field_error(key: str) -> NoReturn:
-    raise FluxCardFieldRequiredError(f'{key} field required')
+def raise_required_field_error(field_path: str) -> NoReturn:
+    """raise a flux card field required error with the path info"""
+    raise FluxCardFieldRequiredError(f'field required at\n{field_path}')
 
 from typing import Callable, TypeVar, Any
 
 T = TypeVar("T")
-K = TypeVar("K")
-V = TypeVar("V")
-R = TypeVar("R")
 
 
 def dict_for_each(function: Callable[[str,TomlType],T]) -> Callable[[Dict[str,TomlType]],Dict[str,T]]:
@@ -68,8 +68,6 @@ def dict_for_each(function: Callable[[str,TomlType],T]) -> Callable[[Dict[str,To
 
 def list_for_each(function: Callable[[int,TomlType],T]) -> Callable[[List[TomlType]],List[T]]:
     return lambda x: [function(i,value) for i,value in enumerate(x)]
-
-
 
 
 def resolve_config_relative_path(raw_path: str, config_file: Path) -> Path:
@@ -108,7 +106,13 @@ class ScheduleConfig:
             .unwrap()
         )
         
-def parse_days_cycle_from_dict(schedule_config: ScheduleConfig):
+def parse_days_cycle_from_dict(schedule_config: ScheduleConfig) -> DaysCycleSchedule:
+    """parses a schedule config object into a days cycle schedule
+    assumes type is days cycle
+    period_anchor and period_length are required fields
+    
+    raises FluxCardRequiredFieldError if the one of the fields is not given
+    raises FluxCardConfigTypeError if the types are not correct"""
     raw = schedule_config.raw
     
     anchor = (
@@ -128,6 +132,14 @@ def parse_days_cycle_from_dict(schedule_config: ScheduleConfig):
     return DaysCycleSchedule(anchor,length)
 
 def parse_month_cycle_from_dict(schedule_config: ScheduleConfig) -> MonthCycleSchedule:
+    """parses a schedule config object into a days cycle schedule
+    assumes type is month cycle
+    start_day is a required field
+        
+    raises FluxCardRequiredFieldError if the field is not given
+    raises FluxCardConfigTypeError if the type is not an int
+    raises FluxCardConfigValueError if the value is not between 1 and 28 inclusive"""
+
     raw = schedule_config.raw
     
     start_day = (
@@ -141,7 +153,11 @@ def parse_month_cycle_from_dict(schedule_config: ScheduleConfig) -> MonthCycleSc
     return MonthCycleSchedule(start_day)
 
 
-def parse_manual_cycle(name: str, config: "AppConfig"):
+def parse_manual_cycle(name: str, config: "AppConfig") -> ManualCycleSchedule:
+    """creates a manual cycle schedule object from the markers in config
+    
+    raises FluxCardConfigTypeError for wrong types in config file
+    raises FluxcardConfigValueError for wrong values in config file"""
     # have to go pick up the historical markers
     manual_schedule = config.get_manual_schedule(name)
     
@@ -160,6 +176,9 @@ class JobConfig:
         self.field_path = field_path + '.' + name
 
     def get_schedule_key(self) -> str | None:
+        """get the schedule name assigned to this job, none if no schedule given
+        
+        raises FluxCardConfigTypeError if the field is not a string"""
 
         return (
             Maybe(self.raw.get('schedule'))
@@ -174,6 +193,7 @@ class OutputConfig:
     field_path: str
 
     def __init__(self, raw: TomlType, config_path: Path, field_path: str, index: int):
+        """raises type error if raw is not a dictionary"""
         if not isinstance(raw,dict):
             raise_type_error('',type(raw).__name__,'dict')
         self.raw = raw
@@ -182,6 +202,9 @@ class OutputConfig:
 
 
     def get_format(self):
+        """Get the format key from an output
+        raises FluxCardRequiredFieldError if the format is not given
+        raises FluxCardConfigTypeError if the format is not a string"""
         return (
             Box(self.raw.get('format'))
             .map(lambda x: x if x is not None else raise_required_field_error(f'{self.field_path}.format'))
@@ -190,6 +213,8 @@ class OutputConfig:
         )
 
     def get_destination(self) -> Path | Literal['stdout']:
+        """Get the destination from output, returns stdout if no destination given
+        raises FluxCardConfigTypeError if the value is not a string"""
         dest = (Box(self.raw.get('dest','stdout'))
             .map(lambda x: x if isinstance(x, str) else raise_type_error(f'{self.field_path}.dest',type(x).__name__,'str'))
             .unwrap()
@@ -197,7 +222,8 @@ class OutputConfig:
         
         return dest if dest == 'stdout' else resolve_config_relative_path(dest,self.config_path)
 
-    def get_extra(self):
+    def get_extra(self) -> Dict[str,TomlType]:
+        """Get any extra keys (other than format and dest) from the output config"""
         args = self.raw.copy()
         args.pop('format')
         if 'dest' in args:
@@ -240,6 +266,10 @@ class MacroConfig:
 
     
     def get_output_configs(self) -> List[OutputConfig]:
+        """return a list of output configurations included in this macro
+        
+        raises FluxCardConfigTypeError if the types of any output config is incorrect
+        """
         return (
             Box(self.raw.get('outputs',[]))
             .map(lambda x: x if isinstance(x,list) else raise_type_error(f'{self.field_path}.outputs',type(x).__name__,'list'))

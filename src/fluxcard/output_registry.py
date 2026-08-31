@@ -36,7 +36,9 @@ def register_formatter(name: str) -> Callable[[F], F]:
 
 
 def get_formatter(name: str) -> FormatterProtocol:
-    """Get the formatter specified by the string or raise an error with the valid formatters"""
+    """Get the formatter specified by the string
+    raise KeyError if the output format is not present"""
+
     if name not in _OUTPUT_REGISTRY:
         available = ", ".join(sorted(_OUTPUT_REGISTRY.keys()))
         raise KeyError(f'unknown output format "{name}".\nAvailable formats are {available}\nSee list with more details using option --list-formats')
